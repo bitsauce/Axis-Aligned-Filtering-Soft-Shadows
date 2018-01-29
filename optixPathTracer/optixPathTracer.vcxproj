@@ -255,14 +255,21 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="$(OPTIX_PATH)SDK\optixPathTracer\optixPathTracer.cpp" />
-    <None Include="$(OPTIX_PATH)SDK\optixPathTracer\draw_color.cu" />
+    <None Include="optixPathTracer.cu" />
+    <None Include="parallelogram.cu" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="$(OPTIX_PATH)SDK\build\ZERO_CHECK.vcxproj">
       <Project>{7884DA59-E35C-326C-B01A-A36DD1FDFE05}</Project>
       <Name>ZERO_CHECK</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="optixPathTracer.h" />
+    <ClInclude Include="random.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="optixPathTracer.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
