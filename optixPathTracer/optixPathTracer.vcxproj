@@ -83,7 +83,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>Debug/</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -105,7 +105,7 @@
       <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK\build;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(OPTIX_PATH)SDK\build\lib\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -121,12 +121,13 @@
     </ProjectReference>
     <PostBuildEvent>
       <Command>copy "$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.dll" "$(TargetDir)"
+copy "$(OPTIX_PATH)SDK\build\bin\$(Configuration)\sutil_sdk.dll" "$(TargetDir)"
 copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>Release/</AssemblerListingLocation>
       <CompileAs>CompileAsCpp</CompileAs>
       <DisableSpecificWarnings>4355;4996</DisableSpecificWarnings>
@@ -150,7 +151,7 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
       <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK\build;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(OPTIX_PATH)SDK\build\lib\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -166,12 +167,13 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </ProjectReference>
     <PostBuildEvent>
       <Command>copy "$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.dll" "$(TargetDir)"
+copy "$(OPTIX_PATH)SDK\build\bin\$(Configuration)\sutil_sdk.dll" "$(TargetDir)"
 copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>MinSizeRel/</AssemblerListingLocation>
       <CompileAs>CompileAsCpp</CompileAs>
       <DisableSpecificWarnings>4355;4996</DisableSpecificWarnings>
@@ -193,7 +195,7 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
       <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK\build;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(OPTIX_PATH)SDK\build\lib\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -209,12 +211,13 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </ProjectReference>
     <PostBuildEvent>
       <Command>copy "$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.dll" "$(TargetDir)"
+copy "$(OPTIX_PATH)SDK\build\bin\$(Configuration)\sutil_sdk.dll" "$(TargetDir)"
 copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK\build;$(OPTIX_PATH)SDK\support;$(OPTIX_PATH)SDK\support\freeglut\include;$(CUDA_PATH)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>RelWithDebInfo/</AssemblerListingLocation>
       <CompileAs>CompileAsCpp</CompileAs>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -235,7 +238,7 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
       <AdditionalIncludeDirectories>$(OPTIX_PATH)include;$(OPTIX_PATH)SDK\sutil;$(OPTIX_PATH)SDK;$(OPTIX_PATH)include\optixu;$(OPTIX_PATH)SDK\build;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)build\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalDependencies>$(OPTIX_PATH)SDK\build\lib\$(Configuration)\sutil_sdk.lib;$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.lib;$(OPTIX_PATH)lib64\optix.1.lib;$(OPTIX_PATH)lib64\optixu.1.lib;$(CUDA_PATH)\lib\x64\nvrtc.lib;opengl32.lib;glu32.lib;winmm.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -251,18 +254,13 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </ProjectReference>
     <PostBuildEvent>
       <Command>copy "$(OPTIX_PATH)SDK\support\freeglut\win64\Release\freeglut.dll" "$(TargetDir)"
+copy "$(OPTIX_PATH)SDK\build\bin\$(Configuration)\sutil_sdk.dll" "$(TargetDir)"
 copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="optixPathTracer.cu" />
     <None Include="parallelogram.cu" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="$(OPTIX_PATH)SDK\build\ZERO_CHECK.vcxproj">
-      <Project>{7884DA59-E35C-326C-B01A-A36DD1FDFE05}</Project>
-      <Name>ZERO_CHECK</Name>
-    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="optixPathTracer.h" />
