@@ -31,12 +31,20 @@
 
 using namespace optix;
 
-rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
-rtBuffer<float4, 2>   result_buffer;
+/* launch_index == pixel-coordinates
+   uint2 value (x, y) which is bound
+   to internal state variable rtLaunchIndex */
+rtDeclareVariable(uint2, launch_index, rtLaunchIndex,);
 
-rtDeclareVariable(float3,                draw_color, , );
+/* result_buffer == output image 
+   2-dimensional buffer of float4s */
+rtBuffer<float4, 2> result_buffer;
+
+/* draw_color == user-variable
+   float3 value (r, g, b) defined by the user */
+rtDeclareVariable(float3, draw_color,,);
 
 RT_PROGRAM void draw_solid_color()
 {
-  result_buffer[launch_index] = make_float4(make_float3(0.f, 1.f, 0.f), 0.f);
+	result_buffer[launch_index] = make_float4(make_float3(0.f, 1.f, 0.f), 0.f);
 }
