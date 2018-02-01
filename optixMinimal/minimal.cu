@@ -31,20 +31,21 @@
 
 using namespace optix;
 
-/* launch_index == pixel-coordinates
-   uint2 value (x, y) which is bound
-   to internal state variable rtLaunchIndex */
+// Input pixel-coordinate
+// An uint2 value (x, y) bound to internal
+// state variable, rtLaunchIndex
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex,);
 
-/* result_buffer == output image 
-   2-dimensional buffer of float4s */
-rtBuffer<float4, 2> result_buffer;
+// Output buffer (final image)
+// A 2-dimensional buffer of float4s
+rtBuffer<float4, 2> output_buffer;
 
-/* draw_color == user-variable
-   float3 value (r, g, b) defined by the user */
-rtDeclareVariable(float3, draw_color,,);
+// Simulation time variable passed from program
+rtDeclareVariable(float, time,,);
 
-RT_PROGRAM void draw_solid_color()
+// Main ray program
+RT_PROGRAM void trace_ray()
 {
-	result_buffer[launch_index] = make_float4(make_float3(0.f, 1.f, 0.f), 0.f);
+	float intensity = fmodf(time, 2.0f);
+	output_buffer[launch_index] = make_float4(make_float3(intensity), 0.f);
 }

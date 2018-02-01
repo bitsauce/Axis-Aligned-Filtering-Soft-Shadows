@@ -5,7 +5,9 @@ VisualStudioVersion = 15.0.27004.2005
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "optixPathTracer", "optixPathTracer\optixPathTracer.vcxproj", "{8D27133A-37FC-30F7-92DF-2225F70E4E76}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "optixHello", "optixHello\optixHello.vcxproj", "{52F664F9-7A11-457B-8428-5A6D5E31CDA8}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "optixMinimal", "optixMinimal\optixMinimal.vcxproj", "{52F664F9-7A11-457B-8428-5A6D5E31CDA8}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "optixSoftShadows", "optixSoftShadows\optixSoftShadows.vcxproj", "{A3E87892-011D-41C9-B7AD-9500134D045A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -31,6 +33,14 @@ Global
 		{52F664F9-7A11-457B-8428-5A6D5E31CDA8}.Release|x64.Build.0 = Release|x64
 		{52F664F9-7A11-457B-8428-5A6D5E31CDA8}.RelWithDebInfo|x64.ActiveCfg = RelWithDebInfo|x64
 		{52F664F9-7A11-457B-8428-5A6D5E31CDA8}.RelWithDebInfo|x64.Build.0 = RelWithDebInfo|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.Debug|x64.ActiveCfg = Debug|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.Debug|x64.Build.0 = Debug|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.MinSizeRel|x64.ActiveCfg = MinSizeRel|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.MinSizeRel|x64.Build.0 = MinSizeRel|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.Release|x64.ActiveCfg = Release|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.Release|x64.Build.0 = Release|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.RelWithDebInfo|x64.ActiveCfg = RelWithDebInfo|x64
+		{A3E87892-011D-41C9-B7AD-9500134D045A}.RelWithDebInfo|x64.Build.0 = RelWithDebInfo|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
