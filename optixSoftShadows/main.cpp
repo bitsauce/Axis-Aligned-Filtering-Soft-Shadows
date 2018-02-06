@@ -54,18 +54,20 @@ using namespace optix;
 Context context = 0;
 const int width = 1280, height = 720;
 
-// Camera state
-float3       camera_up;
-float3       camera_lookat;
-float3       camera_eye;
-Matrix4x4    camera_rotate;
-sutil::Arcball arcball;
+// Camera struct
+struct
+{
+	float3 position;   // Camera position
+	float  pitch, yaw; // Camera orientation (pitch and yaw)
+} camera;
 
 // Mouse state
 int2       mouse_prev_pos;
 int        mouse_button;
 
 void updateCamera();
+
+#include <sstream>
 
 void glutDisplay()
 {
@@ -82,6 +84,18 @@ void glutDisplay()
 	static unsigned frame_count = 0;
 	sutil::displayFps(frame_count++);
 	sutil::displayText("SoftShadows", 10, height - 15);
+
+	{
+		std::stringstream msg;
+		msg << "Yaw: " << camera.yaw;
+		sutil::displayText(msg.str().c_str(), 10, height - 25);
+	}
+
+	{
+		std::stringstream msg;
+		msg << "Pitch: " << camera.pitch;
+		sutil::displayText(msg.str().c_str(), 10, height - 45);
+	}
 	
 	glutSwapBuffers();
 }
@@ -132,44 +146,31 @@ void createScene()
 
 void setupCamera()
 {
-	camera_eye = make_float3(7.0f, 9.2f, -6.0f);
-	camera_lookat = make_float3(0.0f, 4.0f, 0.0f);
-	camera_up = make_float3(0.0f, 1.0f, 0.0f);
-
-	camera_rotate = Matrix4x4::identity();
+	camera.position = make_float3(7.0f, 9.2f, -6.0f);
+	camera.pitch = -0.5;
+	camera.yaw = 2.5f;
 }
 
 void updateCamera()
 {
 	const float vfov = 60.0f;
-	const float aspect_ratio = static_cast<float>(width) /
-		static_cast<float>(height);
+	const float aspect_ratio = static_cast<float>(width) / static_cast<float>(height);
+
+	float3 fwd = make_float3(
+		cos(camera.pitch) * cos(camera.yaw),
+		sin(camera.pitch),
+		cos(camera.pitch) * sin(camera.yaw)
+	);
+
+	float3 camera_lookat = camera.position + fwd;
 
 	float3 camera_u, camera_v, camera_w;
 	sutil::calculateCameraVariables(
-		camera_eye, camera_lookat, camera_up, vfov, aspect_ratio,
+		camera.position, camera_lookat, make_float3(0.0f, 1.0f, 0.0f),
+		vfov, aspect_ratio,
 		camera_u, camera_v, camera_w, true);
 
-	const Matrix4x4 frame = Matrix4x4::fromBasis(
-		normalize(camera_u),
-		normalize(camera_v),
-		normalize(-camera_w),
-		camera_lookat);
-	const Matrix4x4 frame_inv = frame.inverse();
-	// Apply camera rotation twice to match old SDK behavior
-	const Matrix4x4 trans = frame * camera_rotate*camera_rotate*frame_inv;
-
-	camera_eye = make_float3(trans*make_float4(camera_eye, 1.0f));
-	camera_lookat = make_float3(trans*make_float4(camera_lookat, 1.0f));
-	camera_up = make_float3(trans*make_float4(camera_up, 0.0f));
-
-	sutil::calculateCameraVariables(
-		camera_eye, camera_lookat, camera_up, vfov, aspect_ratio,
-		camera_u, camera_v, camera_w, true);
-
-	camera_rotate = Matrix4x4::identity();
-
-	context["eye"]->setFloat(camera_eye);
+	context["eye"]->setFloat(camera.position);
 	context["U"]->setFloat(camera_u);
 	context["V"]->setFloat(camera_v);
 	context["W"]->setFloat(camera_w);
@@ -199,31 +200,55 @@ void glutMousePress(int button, int state, int x, int y)
 
 void glutMouseMotion(int x, int y)
 {
-	if(mouse_button == GLUT_RIGHT_BUTTON)
-	{
-		const float dx = static_cast<float>(x - mouse_prev_pos.x) /
-			static_cast<float>(width);
-		const float dy = static_cast<float>(y - mouse_prev_pos.y) /
-			static_cast<float>(height);
-		const float dmax = fabsf(dx) > fabs(dy) ? dx : dy;
-		const float scale = fminf(dmax, 0.9f);
-		camera_eye = camera_eye + (camera_lookat - camera_eye)*scale;
-	}
-	else if(mouse_button == GLUT_LEFT_BUTTON)
-	{
-		const float2 from = { static_cast<float>(mouse_prev_pos.x),
-			static_cast<float>(mouse_prev_pos.y) };
-		const float2 to = { static_cast<float>(x),
-			static_cast<float>(y) };
-
-		const float2 a = { from.x / width, from.y / height };
-		const float2 b = { to.x / width, to.y / height };
-
-		camera_rotate = arcball.rotate(b, a);
-	}
+	camera.yaw   += (mouse_prev_pos.x - x) * 0.001f;
+	camera.pitch -= (mouse_prev_pos.y - y) * 0.001f;
 
 	mouse_prev_pos = make_int2(x, y);
 }
+
+void glutKeyboardPress(unsigned char k, int x, int y)
+{
+	bool key_right = false, key_left = false, key_forward = false, key_backward = false;
+
+	switch(k)
+	{
+	case 'w':
+		key_forward = true;
+		break;
+
+	case 'a':
+		key_left = true;
+		break;
+
+	case 's':
+		key_backward = true;
+		break;
+
+	case 'd':
+		key_right = true;
+		break;
+
+	case(27): // ESC
+	{
+		destroyContext();
+		exit(0);
+	}
+	}
+
+	float3 fwd = make_float3(
+		cos(camera.pitch) * cos(camera.yaw),
+		sin(camera.pitch),
+		cos(camera.pitch) * sin(camera.yaw)
+	);
+	float3 right = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), fwd));
+	//float3 up = cross(fwd, right);
+
+	// Move the camera relative to the direction it is facing
+	camera.position += right * float((key_right - key_left) * 1.0f);
+	//camera.position += up * float((actionState[MOVE_UP] - actionState[MOVE_DOWN]) * moveSpeed);
+	camera.position += fwd * float((key_forward - key_backward) * 1.0f);
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -279,6 +304,7 @@ int main(int argc, char* argv[])
 		glutCloseFunc(destroyContext);
 		glutMotionFunc(glutMouseMotion);
 		glutMouseFunc(glutMousePress);
+		glutKeyboardFunc(glutKeyboardPress);
 		glutMainLoop();
 	} SUTIL_CATCH(context->get())
 }
