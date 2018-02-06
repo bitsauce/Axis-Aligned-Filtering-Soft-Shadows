@@ -61,9 +61,28 @@ struct
 	float  pitch, yaw; // Camera orientation (pitch and yaw)
 } camera;
 
+
+const float move_speed = 1.0f;
+const float rotation_speed = 0.0125f;
+
 // Mouse state
 int2       mouse_prev_pos;
 int        mouse_button;
+
+// Enum of keyboard input actions
+enum Action
+{
+	MOVE_UP,
+	MOVE_DOWN,
+	MOVE_LEFT,
+	MOVE_RIGHT,
+	MOVE_FORWARD,
+	MOVE_BACKWARD,
+	ACTION_COUNT
+};
+
+// Action state list
+bool actionState[ACTION_COUNT];
 
 void updateCamera();
 
@@ -162,6 +181,14 @@ void updateCamera()
 		cos(camera.pitch) * sin(camera.yaw)
 	);
 
+	float3 right = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), fwd));
+	float3 up = cross(fwd, right);
+
+	// Move the camera relative to the direction it is facing
+	camera.position += right * float((actionState[MOVE_LEFT] - actionState[MOVE_RIGHT]) * move_speed);
+	camera.position += up * float((actionState[MOVE_UP] - actionState[MOVE_DOWN]) * move_speed);
+	camera.position += fwd * float((actionState[MOVE_FORWARD] - actionState[MOVE_BACKWARD]) * move_speed);
+
 	float3 camera_lookat = camera.position + fwd;
 
 	float3 camera_u, camera_v, camera_w;
@@ -200,55 +227,38 @@ void glutMousePress(int button, int state, int x, int y)
 
 void glutMouseMotion(int x, int y)
 {
-	camera.yaw   += (mouse_prev_pos.x - x) * 0.001f;
-	camera.pitch -= (mouse_prev_pos.y - y) * 0.001f;
+	camera.yaw   -= (mouse_prev_pos.x - x) * rotation_speed;
+	camera.pitch += (mouse_prev_pos.y - y) * rotation_speed;
 
 	mouse_prev_pos = make_int2(x, y);
 }
 
-void glutKeyboardPress(unsigned char k, int x, int y)
+void glutKeyboardPress(unsigned char k, int, int)
 {
-	bool key_right = false, key_left = false, key_forward = false, key_backward = false;
-
 	switch(k)
 	{
-	case 'w':
-		key_forward = true;
-		break;
-
-	case 'a':
-		key_left = true;
-		break;
-
-	case 's':
-		key_backward = true;
-		break;
-
-	case 'd':
-		key_right = true;
-		break;
-
-	case(27): // ESC
+	case 'w': actionState[MOVE_FORWARD] = true; break;
+	case 'a': actionState[MOVE_LEFT] = true; break;
+	case 's': actionState[MOVE_BACKWARD] = true; break;
+	case 'd': actionState[MOVE_RIGHT] = true; break;
+	case 27: // ESC
 	{
 		destroyContext();
 		exit(0);
 	}
 	}
-
-	float3 fwd = make_float3(
-		cos(camera.pitch) * cos(camera.yaw),
-		sin(camera.pitch),
-		cos(camera.pitch) * sin(camera.yaw)
-	);
-	float3 right = normalize(cross(make_float3(0.0f, 1.0f, 0.0f), fwd));
-	//float3 up = cross(fwd, right);
-
-	// Move the camera relative to the direction it is facing
-	camera.position += right * float((key_right - key_left) * 1.0f);
-	//camera.position += up * float((actionState[MOVE_UP] - actionState[MOVE_DOWN]) * moveSpeed);
-	camera.position += fwd * float((key_forward - key_backward) * 1.0f);
 }
 
+void glutKeyboardUp(unsigned char k, int, int)
+{
+	switch( k )
+	{
+	case 'w': actionState[MOVE_FORWARD] = false; break;
+	case 'a': actionState[MOVE_LEFT] = false; break;
+	case 's': actionState[MOVE_BACKWARD] = false; break;
+	case 'd': actionState[MOVE_RIGHT] = false; break;
+	}
+}
 
 int main(int argc, char* argv[])
 {
@@ -305,6 +315,7 @@ int main(int argc, char* argv[])
 		glutMotionFunc(glutMouseMotion);
 		glutMouseFunc(glutMousePress);
 		glutKeyboardFunc(glutKeyboardPress);
+		glutKeyboardUpFunc(glutKeyboardUp);
 		glutMainLoop();
 	} SUTIL_CATCH(context->get())
 }
