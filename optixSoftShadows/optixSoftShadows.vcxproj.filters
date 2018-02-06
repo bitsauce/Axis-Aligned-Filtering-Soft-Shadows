@@ -25,5 +25,8 @@
     <None Include="main.cu">
       <Filter>CUDA Files</Filter>
     </None>
+    <None Include="box.cu">
+      <Filter>CUDA Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

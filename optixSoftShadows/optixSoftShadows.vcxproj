@@ -263,6 +263,7 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     <ClCompile Include="util.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="box.cu" />
     <None Include="main.cu" />
   </ItemGroup>
   <ItemGroup>

@@ -38,6 +38,9 @@
 #endif
 
 #include <optix.h>
+#include <optixu/optixpp_namespace.h>
+#include <optixu/optixu_math_stream_namespace.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -49,23 +52,19 @@ using namespace optix;
 
 Context context = 0;
 const int width = 1280, height = 720;
-float time = 0.0f;
 
 void glutDisplay()
 {
+	float time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
 	context["time"]->setFloat(time);
 	context->launch(0, width, height);
 	
 	sutil::displayBufferGL(context["output_buffer"]->getBuffer());
 
-	{
-		static unsigned frame_count = 0;
-		sutil::displayFps(frame_count++);
-		sutil::displayText("SoftShadows", 10, height - 15);
-	}
-
-	time += 1.0f / 30.0f;
-
+	static unsigned frame_count = 0;
+	sutil::displayFps(frame_count++);
+	sutil::displayText("SoftShadows", 10, height - 15);
+	
 	glutSwapBuffers();
 }
 
@@ -76,6 +75,41 @@ void initWindow(int* argc, char** argv)
 	glutInitWindowSize(width, height);
 	glutInitWindowPosition(10, 10);
 	glutCreateWindow(argv[0]);
+}
+
+void createScene()
+{
+	const char *ptx = loadCudaFile("box.cu");
+	Program box_bounds = context->createProgramFromPTXString(ptx, "box_bounds");
+	Program box_intersect = context->createProgramFromPTXString(ptx, "box_intersect");
+
+	// Create box
+	Geometry box = context->createGeometry();
+	box->setPrimitiveCount(1u);
+	box->setBoundingBoxProgram(box_bounds);
+	box->setIntersectionProgram(box_intersect);
+	box["boxmin"]->setFloat(-2.0f, 0.0f, -2.0f);
+	box["boxmax"]->setFloat(2.0f, 7.0f, 2.0f);
+
+	// Material
+	Material box_material = context->createMaterial();
+	const char *ptx2 = loadCudaFile("main.cu");
+	box_material->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "closest_hit_radiance0"));
+	
+	// Create geometry instances
+	std::vector<GeometryInstance> gis;
+
+	// Create geometry instance
+	GeometryInstance gi = context->createGeometryInstance();
+	gi->setGeometry(box);
+	gi->addMaterial(box_material);
+
+	gis.push_back(gi);
+
+	// Create geometry group
+	GeometryGroup geometry_group = context->createGeometryGroup(gis.begin(), gis.end());
+	geometry_group->setAcceleration(context->createAcceleration("Trbvh"));
+	context["scene_geometry"]->set(geometry_group);
 }
 
 void destroyContext()
@@ -106,7 +140,7 @@ int main(int argc, char* argv[])
 		// Create output buffer
 		Buffer buffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 		context["output_buffer"]->set(buffer);
-		context["time"]->setFloat(time);
+		context["time"]->setFloat(glutGet(GLUT_ELAPSED_TIME) / 1000.0f);
 
 		// Set ray generation program
 		const char *ptx = loadCudaFile("main.cu");
