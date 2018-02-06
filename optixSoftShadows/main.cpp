@@ -146,7 +146,27 @@ void createScene()
 	Material box_material = context->createMaterial();
 	const char *ptx2 = loadCudaFile("main.cu");
 	box_material->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "closest_hit_radiance"));
-	
+
+	// Floor geometry
+	Geometry parallelogram = context->createGeometry();
+	parallelogram->setPrimitiveCount(1u);
+	ptx = loadCudaFile("parallelogram.cu");
+	parallelogram->setBoundingBoxProgram(context->createProgramFromPTXString(ptx, "bounds"));
+	parallelogram->setIntersectionProgram(context->createProgramFromPTXString(ptx, "intersect"));
+	float3 anchor = make_float3(-64.0f, 0.01f, -64.0f);
+	float3 v1 = make_float3(128.0f, 0.0f, 0.0f);
+	float3 v2 = make_float3(0.0f, 0.0f, 128.0f);
+	float3 normal = cross(v2, v1);
+	normal = normalize(normal);
+	float d = dot(normal, anchor);
+	v1 *= 1.0f / dot(v1, v1);
+	v2 *= 1.0f / dot(v2, v2);
+	float4 plane = make_float4(normal, d);
+	parallelogram["plane"]->setFloat(plane);
+	parallelogram["v1"]->setFloat(v1);
+	parallelogram["v2"]->setFloat(v2);
+	parallelogram["anchor"]->setFloat(anchor);
+
 	// Create geometry instances
 	std::vector<GeometryInstance> gis;
 
@@ -154,9 +174,14 @@ void createScene()
 	GeometryInstance gi = context->createGeometryInstance();
 	gi->setGeometry(box);
 	gi->addMaterial(box_material);
-
 	gis.push_back(gi);
 
+	GeometryInstance gi2 = context->createGeometryInstance();
+	gi2->setGeometry(parallelogram);
+	gi2->addMaterial(box_material);
+	gis.push_back(gi2);
+
+	
 	// Create geometry group
 	GeometryGroup geometry_group = context->createGeometryGroup(gis.begin(), gis.end());
 	geometry_group->setAcceleration(context->createAcceleration("NoAccel"));

@@ -34,5 +34,8 @@
     <None Include="box.cu">
       <Filter>CUDA Files</Filter>
     </None>
+    <None Include="parallelogram.cu">
+      <Filter>CUDA Files</Filter>
+    </None>
   </ItemGroup>
 </Project>
