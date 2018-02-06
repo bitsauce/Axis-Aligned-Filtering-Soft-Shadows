@@ -47,5 +47,5 @@ rtDeclareVariable(float, time,,);
 RT_PROGRAM void trace_ray()
 {
 	float intensity = fmodf(time, 2.0f);
-	output_buffer[launch_index] = make_float4(make_float3(intensity), 0.f);
+	output_buffer[launch_index] = make_float4(make_float3(intensity), 0.0f);
 }

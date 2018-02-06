@@ -33,81 +33,86 @@ using namespace optix;
 
 #define EPSILON  1.e-3f
 
-struct PerRayData_pathtrace
+//--------------------------------------------------------------
+// Per ray data struct
+//--------------------------------------------------------------
+
+struct PerRayData_radiance
 {
 	float3 result;
-	float3 radiance;
-	float3 attenuation;
-	float3 origin;
-	float3 direction;
-	unsigned int seed;
-	int depth;
-	int countEmitted;
-	int done;
 };
 
+//--------------------------------------------------------------
+// Variable declarations
+//--------------------------------------------------------------
+
 // Input pixel-coordinate
-// An uint2 value (x, y) bound to internal
-// state variable, rtLaunchIndex
-rtDeclareVariable(uint2, launch_index, rtLaunchIndex,);
+// An uint2 value (x, y) bound to internal state variable "rtLaunchIndex"
+rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 
 // Output buffer (final image)
 // A 2-dimensional buffer of float4s
 rtBuffer<float4, 2> output_buffer;
 
-// Simulation time variable passed from program
-rtDeclareVariable(float, time,,);
+// Shading normal from intersection program
+rtDeclareVariable(float3, shading_normal, attribute shading_normal, );
+
+// Scene geometry objects
 rtDeclareVariable(rtObject, scene_geometry,,);
 
-rtDeclareVariable(PerRayData_radiance, prd_radiance, rtPayload, );
+// Pinhole camera variables
+rtDeclareVariable(float3, eye, , );
+rtDeclareVariable(float3, U, , );
+rtDeclareVariable(float3, V, , );
+rtDeclareVariable(float3, W, , );
 
+//--------------------------------------------------------------
 // Main ray program
+//--------------------------------------------------------------
 RT_PROGRAM void trace_ray()
 {
-	float intensity = fmodf(time, 2.0f);
-
-	float3 ray_origin = make_float3(0.0f);
-	float3 ray_direction = make_float3(1.0f, 0.0f, 0.0f);
+	size_t2 screen = output_buffer.size();
+	float2 d = make_float2(launch_index) / make_float2(screen) * 2.f - 1.f; // pixel-coordinate [-1, 1] range
+	float3 ray_origin = eye;
+	float3 ray_direction = normalize(d.x*U + d.y*V + W);
 
 	// Initialze per-ray data
-	PerRayData_pathtrace prd;
-	prd.result = make_float3(0.f);
-	prd.attenuation = make_float3(1.f);
-	prd.countEmitted = true;
-	prd.done = false;
-	prd.seed = 0;
-	prd.depth = 0;
+	PerRayData_radiance prd;
 
+	// Trace the ray in the direction of the camera
 	Ray ray = make_Ray(ray_origin, ray_direction, 0, EPSILON, RT_DEFAULT_MAX);
 	rtTrace(scene_geometry, ray, prd);
 
-	output_buffer[launch_index] = make_float4(make_float3(prd.radiance), 0.f);
+	// Set output color
+	output_buffer[launch_index] = make_float4(prd.result, 0.f);
 }
 
+//--------------------------------------------------------------
+// Closest hit radiance
+//--------------------------------------------------------------
+rtDeclareVariable(PerRayData_radiance, prd_radiance, rtPayload, );
 
-//
-// Returns solid color for miss rays
-//
-rtDeclareVariable(float3, bg_color, , );
+RT_PROGRAM void closest_hit_radiance()
+{
+	prd_radiance.result = normalize(rtTransformNormal(RT_OBJECT_TO_WORLD, shading_normal));
+}
+
+//--------------------------------------------------------------
+// Miss program
+//--------------------------------------------------------------
+rtDeclareVariable(float3, bg_color,,);
+
 RT_PROGRAM void miss()
 {
-	prd.radiance = bg_color;
+	prd_radiance.result = bg_color;
 }
 
+//--------------------------------------------------------------
+// Exception
+//--------------------------------------------------------------
+rtDeclareVariable(float3, bad_color,,);
 
-//
-// Returns shading normal as the surface shading result
-// 
-RT_PROGRAM void closest_hit_radiance0()
-{
-	prd.radiance.result = normalize(rtTransformNormal(RT_OBJECT_TO_WORLD, shading_normal))*0.5f + 0.5f;
-}
-
-
-//
-// Set pixel to solid color upon failur
-//
 RT_PROGRAM void exception()
 {
-	output_buffer[launch_index] = make_color(bad_color);
+	output_buffer[launch_index] = make_float4(bad_color, 1.0f);
 }

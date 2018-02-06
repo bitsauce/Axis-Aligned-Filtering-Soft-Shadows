@@ -45,6 +45,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sutil.h>
+#include <Arcball.h>
 
 #include "util.h"
 
@@ -53,10 +54,27 @@ using namespace optix;
 Context context = 0;
 const int width = 1280, height = 720;
 
+// Camera state
+float3       camera_up;
+float3       camera_lookat;
+float3       camera_eye;
+Matrix4x4    camera_rotate;
+sutil::Arcball arcball;
+
+// Mouse state
+int2       mouse_prev_pos;
+int        mouse_button;
+
+void updateCamera();
+
 void glutDisplay()
 {
 	float time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
 	context["time"]->setFloat(time);
+
+
+	updateCamera();
+
 	context->launch(0, width, height);
 	
 	sutil::displayBufferGL(context["output_buffer"]->getBuffer());
@@ -94,7 +112,7 @@ void createScene()
 	// Material
 	Material box_material = context->createMaterial();
 	const char *ptx2 = loadCudaFile("main.cu");
-	box_material->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "closest_hit_radiance0"));
+	box_material->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "closest_hit_radiance"));
 	
 	// Create geometry instances
 	std::vector<GeometryInstance> gis;
@@ -108,8 +126,53 @@ void createScene()
 
 	// Create geometry group
 	GeometryGroup geometry_group = context->createGeometryGroup(gis.begin(), gis.end());
-	geometry_group->setAcceleration(context->createAcceleration("Trbvh"));
+	geometry_group->setAcceleration(context->createAcceleration("NoAccel"));
 	context["scene_geometry"]->set(geometry_group);
+}
+
+void setupCamera()
+{
+	camera_eye = make_float3(7.0f, 9.2f, -6.0f);
+	camera_lookat = make_float3(0.0f, 4.0f, 0.0f);
+	camera_up = make_float3(0.0f, 1.0f, 0.0f);
+
+	camera_rotate = Matrix4x4::identity();
+}
+
+void updateCamera()
+{
+	const float vfov = 60.0f;
+	const float aspect_ratio = static_cast<float>(width) /
+		static_cast<float>(height);
+
+	float3 camera_u, camera_v, camera_w;
+	sutil::calculateCameraVariables(
+		camera_eye, camera_lookat, camera_up, vfov, aspect_ratio,
+		camera_u, camera_v, camera_w, true);
+
+	const Matrix4x4 frame = Matrix4x4::fromBasis(
+		normalize(camera_u),
+		normalize(camera_v),
+		normalize(-camera_w),
+		camera_lookat);
+	const Matrix4x4 frame_inv = frame.inverse();
+	// Apply camera rotation twice to match old SDK behavior
+	const Matrix4x4 trans = frame * camera_rotate*camera_rotate*frame_inv;
+
+	camera_eye = make_float3(trans*make_float4(camera_eye, 1.0f));
+	camera_lookat = make_float3(trans*make_float4(camera_lookat, 1.0f));
+	camera_up = make_float3(trans*make_float4(camera_up, 0.0f));
+
+	sutil::calculateCameraVariables(
+		camera_eye, camera_lookat, camera_up, vfov, aspect_ratio,
+		camera_u, camera_v, camera_w, true);
+
+	camera_rotate = Matrix4x4::identity();
+
+	context["eye"]->setFloat(camera_eye);
+	context["U"]->setFloat(camera_u);
+	context["V"]->setFloat(camera_v);
+	context["W"]->setFloat(camera_w);
 }
 
 void destroyContext()
@@ -119,6 +182,47 @@ void destroyContext()
 		context->destroy();
 		context = 0;
 	}
+}
+
+void glutMousePress(int button, int state, int x, int y)
+{
+	if(state == GLUT_DOWN)
+	{
+		mouse_button = button;
+		mouse_prev_pos = make_int2(x, y);
+	}
+	else
+	{
+		// nothing
+	}
+}
+
+void glutMouseMotion(int x, int y)
+{
+	if(mouse_button == GLUT_RIGHT_BUTTON)
+	{
+		const float dx = static_cast<float>(x - mouse_prev_pos.x) /
+			static_cast<float>(width);
+		const float dy = static_cast<float>(y - mouse_prev_pos.y) /
+			static_cast<float>(height);
+		const float dmax = fabsf(dx) > fabs(dy) ? dx : dy;
+		const float scale = fminf(dmax, 0.9f);
+		camera_eye = camera_eye + (camera_lookat - camera_eye)*scale;
+	}
+	else if(mouse_button == GLUT_LEFT_BUTTON)
+	{
+		const float2 from = { static_cast<float>(mouse_prev_pos.x),
+			static_cast<float>(mouse_prev_pos.y) };
+		const float2 to = { static_cast<float>(x),
+			static_cast<float>(y) };
+
+		const float2 a = { from.x / width, from.y / height };
+		const float2 b = { to.x / width, to.y / height };
+
+		camera_rotate = arcball.rotate(b, a);
+	}
+
+	mouse_prev_pos = make_int2(x, y);
 }
 
 int main(int argc, char* argv[])
@@ -139,20 +243,42 @@ int main(int argc, char* argv[])
 
 		// Create output buffer
 		Buffer buffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
-		context["output_buffer"]->set(buffer);
-		context["time"]->setFloat(glutGet(GLUT_ELAPSED_TIME) / 1000.0f);
+
+		createScene();
+		setupCamera();
+		updateCamera();
 
 		// Set ray generation program
 		const char *ptx = loadCudaFile("main.cu");
 		context->setRayGenerationProgram(0, context->createProgramFromPTXString(ptx, "trace_ray"));
+		context["output_buffer"]->set(buffer);
+		context["time"]->setFloat(glutGet(GLUT_ELAPSED_TIME) / 1000.0f);
+
+		// Exception program
+		context->setExceptionProgram(0, context->createProgramFromPTXString(ptx, "exception"));
+		context["bad_color"]->setFloat(1.0f, 0.0f, 1.0f);
+
+		// Miss program
+		context->setMissProgram(0, context->createProgramFromPTXString(ptx, "miss"));
+		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
 
 		context->validate();
 
+		// Initialize GL state
+		glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
 		glOrtho(0, 1, 0, 1, -1, 1);
+
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+
+		glViewport(0, 0, width, height);
 
 		glutDisplayFunc(glutDisplay);
 		glutIdleFunc(glutDisplay);
 		glutCloseFunc(destroyContext);
+		glutMotionFunc(glutMouseMotion);
+		glutMouseFunc(glutMousePress);
 		glutMainLoop();
 	} SUTIL_CATCH(context->get())
 }
