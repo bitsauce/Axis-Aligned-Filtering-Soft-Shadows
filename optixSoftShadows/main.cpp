@@ -45,7 +45,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <sutil.h>
-#include <Arcball.h>
 
 #include "util.h"
 
@@ -107,13 +106,13 @@ void glutDisplay()
 	{
 		std::stringstream msg;
 		msg << "Yaw: " << camera.yaw;
-		sutil::displayText(msg.str().c_str(), 10, height - 25);
+		sutil::displayText(msg.str().c_str(), 10, height - 35);
 	}
 
 	{
 		std::stringstream msg;
 		msg << "Pitch: " << camera.pitch;
-		sutil::displayText(msg.str().c_str(), 10, height - 45);
+		sutil::displayText(msg.str().c_str(), 10, height - 55);
 	}
 	
 	glutSwapBuffers();
@@ -128,8 +127,32 @@ void initWindow(int* argc, char** argv)
 	glutCreateWindow(argv[0]);
 }
 
+struct ParallelogramLight
+{
+	float3 corner;
+	float3 v1, v2;
+	float3 normal;
+	float3 emission;
+};
+
 void createScene()
 {
+	// Light buffer
+	ParallelogramLight light;
+	light.corner = make_float3(343.0f, 548.6f, 227.0f);
+	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
+	light.v2 = make_float3(0.0f, 0.0f, 105.0f);
+	light.normal = normalize(cross(light.v1, light.v2));
+	light.emission = make_float3(15.0f, 15.0f, 5.0f);
+
+	Buffer light_buffer = context->createBuffer(RT_BUFFER_INPUT);
+	light_buffer->setFormat(RT_FORMAT_USER);
+	light_buffer->setElementSize(sizeof(ParallelogramLight));
+	light_buffer->setSize(1u);
+	memcpy(light_buffer->map(), &light, sizeof(light));
+	light_buffer->unmap();
+	context["lights"]->setBuffer(light_buffer);
+
 	const char *ptx = loadCudaFile("box.cu");
 	Program box_bounds = context->createProgramFromPTXString(ptx, "box_bounds");
 	Program box_intersect = context->createProgramFromPTXString(ptx, "box_intersect");
@@ -145,7 +168,7 @@ void createScene()
 	// Material
 	Material box_material = context->createMaterial();
 	const char *ptx2 = loadCudaFile("main.cu");
-	box_material->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "closest_hit_radiance"));
+	box_material->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "diffuse"));
 
 	// Floor geometry
 	Geometry parallelogram = context->createGeometry();
@@ -298,7 +321,7 @@ int main(int argc, char* argv[])
 
 		// Create optix context
 		context = Context::create();
-		context->setRayTypeCount(1);
+		context->setRayTypeCount(2);
 		context->setEntryPointCount(1);
 
 		// Create output buffer
@@ -312,7 +335,9 @@ int main(int argc, char* argv[])
 		const char *ptx = loadCudaFile("main.cu");
 		context->setRayGenerationProgram(0, context->createProgramFromPTXString(ptx, "trace_ray"));
 		context["output_buffer"]->set(buffer);
-		context["time"]->setFloat(glutGet(GLUT_ELAPSED_TIME) / 1000.0f);
+
+		context["rr_begin_depth"]->setUint(1);
+		context["sqrt_num_samples"]->setUint(3); // 3*3=9 samples
 
 		// Exception program
 		context->setExceptionProgram(0, context->createProgramFromPTXString(ptx, "exception"));
