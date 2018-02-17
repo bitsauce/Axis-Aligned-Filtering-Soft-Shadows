@@ -48,6 +48,7 @@
 #include <sstream>
 
 #include "util.h"
+#include "structs.h"
 
 using namespace optix;
 
@@ -61,9 +62,8 @@ struct
 	float  pitch, yaw; // Camera orientation (pitch and yaw)
 } camera;
 
-
-const float move_speed = 25.0f;
-const float rotation_speed = 0.0125f;
+const float move_speed = 10.0f;
+const float rotation_speed = 0.005f;
 
 // Mouse state
 int2       mouse_prev_pos;
@@ -109,6 +109,12 @@ void glutDisplay()
 		msg << "Pitch: " << camera.pitch;
 		sutil::displayText(msg.str().c_str(), 10, height - 55);
 	}
+
+	{
+		std::stringstream msg;
+		msg << "Position: " << camera.position;
+		sutil::displayText(msg.str().c_str(), 10, height - 75);
+	}
 	
 	glutSwapBuffers();
 }
@@ -121,22 +127,6 @@ void initWindow(int* argc, char** argv)
 	glutInitWindowPosition(10, 10);
 	glutCreateWindow(argv[0]);
 }
-
-/*struct ParallelogramLight
-{
-	float3 corner;
-	float3 v1, v2;
-	float3 normal;
-	float3 emission;
-};*/
-
-struct BasicLight
-{
-	float3 pos;
-	float3 color;
-	int    casts_shadow;
-	int    padding;
-};
 
 void setMaterial(
 	GeometryInstance& gi,
@@ -182,11 +172,18 @@ GeometryInstance createParallelogram(
 void createScene()
 {
 	// Light buffer
-	BasicLight light = { make_float3(343.0f, 548.6f, 227.0f), make_float3(1.0f, 1.0f, 1.0f), 1 };
+	//BasicLight light = { make_float3(343.0f, 548.6f, 227.0f), make_float3(1.0f, 1.0f, 1.0f), 1 };
+
+	ParallelogramLight light;
+	light.corner = make_float3(343.0f, 548.6f, 227.0f);
+	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
+	light.v2 = make_float3(0.0f, 0.0f, 105.0f);
+	light.normal = normalize(cross(light.v1, light.v2));
+	light.emission = make_float3(15.0f, 15.0f, 5.0f);
 
 	Buffer light_buffer = context->createBuffer(RT_BUFFER_INPUT);
 	light_buffer->setFormat(RT_FORMAT_USER);
-	light_buffer->setElementSize(sizeof(BasicLight));
+	light_buffer->setElementSize(sizeof(ParallelogramLight));
 	light_buffer->setSize(1u);
 	memcpy(light_buffer->map(), &light, sizeof(light));
 	light_buffer->unmap();
@@ -307,9 +304,9 @@ void createScene()
 
 void setupCamera()
 {
-	camera.position = make_float3(7.0f, 9.2f, -6.0f);
-	camera.pitch = -0.5;
-	camera.yaw = 2.5f;
+	camera.position = make_float3(275.0f, 340.0f, -345.0f);
+	camera.pitch = 0.0f;
+	camera.yaw = 1.5f;
 }
 
 void updateCamera()

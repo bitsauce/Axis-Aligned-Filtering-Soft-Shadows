@@ -26,8 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <optix.h>
-//#include "light.h"
+#include <optixu/optixu_math_namespace.h>
+#include "structs.h"
 #include "random.h"
 
 using namespace optix;
@@ -38,11 +38,10 @@ using namespace optix;
 // Per-ray data structs
 //--------------------------------------------------------------
 
-struct PerRayData_radiance
+struct PerRayData_diffuse
 {
-	float3 result;
-	float  importance;
-	int depth;
+	float3       result;
+	unsigned int seed;
 };
 
 struct PerRayData_shadow
@@ -75,10 +74,11 @@ rtDeclareVariable(float3, geometric_normal, attribute geometric_normal, );
 rtDeclareVariable(float3, shading_normal, attribute shading_normal, );
 
 rtDeclareVariable(Ray, ray, rtCurrentRay, );
-rtDeclareVariable(PerRayData_radiance, prd_radiance, rtPayload, );
+rtDeclareVariable(PerRayData_diffuse, prd_diffuse, rtPayload, );
 rtDeclareVariable(PerRayData_shadow, prd_shadow, rtPayload, );
 
-//rtBuffer<ParallelogramLight> lights;
+// Light sources
+rtBuffer<ParallelogramLight> lights;
 
 //--------------------------------------------------------------
 // Main ray program
@@ -86,20 +86,22 @@ rtDeclareVariable(PerRayData_shadow, prd_shadow, rtPayload, );
 
 RT_PROGRAM void trace_ray()
 {
-	size_t2 screen = output_buffer.size();
-
-	float2 d = make_float2(launch_index) / make_float2(screen) * 2.f - 1.f;
+	size_t2 screen = output_buffer.size(); // Screen size
+	float2 d = make_float2(launch_index) / make_float2(screen) * 2.f - 1.f; // Pixel coordinate in [-1, 1]
 	float3 ray_origin = eye;
 	float3 ray_direction = normalize(d.x*U + d.y*V + W);
 
+	// Create ray from camera into scene
 	Ray ray(ray_origin, ray_direction, 0, EPSILON);
 
-	PerRayData_radiance prd;
-	prd.importance = 1.f;
-	prd.depth = 0;
+	// Per radiance data
+	PerRayData_diffuse prd;
+	prd.seed = tea<16>(screen.x*launch_index.y + launch_index.x, 0);//frame_number);
 
+	// Trace geometry
 	rtTrace(scene_geometry, ray, prd);
 
+	// Set resulting color
 	output_buffer[launch_index] = make_float4(prd.result, 1.0f);
 }
 
@@ -114,20 +116,6 @@ rtDeclareVariable(float3, Kd, , );
 rtDeclareVariable(float3, ambient_light_color, , );
 rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
 
-struct BasicLight
-{
-#if defined(__cplusplus)
-	typedef optix::float3 float3;
-#endif
-	float3 pos;
-	float3 color;
-	int    casts_shadow;
-	int    padding;
-};
-
-rtBuffer<BasicLight> lights;
-
-
 RT_PROGRAM void diffuse()
 {
 	float3 world_geo_normal = normalize(rtTransformNormal(RT_OBJECT_TO_WORLD, geometric_normal));
@@ -137,22 +125,35 @@ RT_PROGRAM void diffuse()
 
 	float3 hit_point = ray.origin + t_hit * ray.direction;
 
-	for(int i = 0; i < lights.size(); ++i) {
-		BasicLight light = lights[i];
-		float3 L = normalize(light.pos - hit_point);
+	unsigned int seed = prd_diffuse.seed;
+	for(int i = 0; i < lights.size(); ++i)
+	{
+		//BasicLight light = lights[i];
+
+
+		// Choose random point on light
+		ParallelogramLight light = lights[i];
+		const float z1 = rnd(seed);
+		const float z2 = rnd(seed);
+		const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
+
+
+		float3 L = normalize(light_pos - hit_point);
 		float nDl = dot(ffnormal, L);
 
-		if(nDl > 0.0f) {
-			// cast shadow ray
+		if(nDl > 0.0f)
+		{
+			// Cast shadow ray
 			PerRayData_shadow shadow_prd;
 			shadow_prd.attenuation = make_float3(1.0f);
-			float Ldist = length(light.pos - hit_point);
+			float Ldist = length(light_pos - hit_point);
 			Ray shadow_ray(hit_point, L, 1, EPSILON, Ldist);
 			rtTrace(scene_geometry, shadow_ray, shadow_prd);
 			float3 light_attenuation = shadow_prd.attenuation;
 
-			if(fmaxf(light_attenuation) > 0.0f) {
-				float3 Lc = light.color * light_attenuation;
+			if(fmaxf(light_attenuation) > 0.0f)
+			{
+				float3 Lc = light_attenuation /* * light_color */;
 				color += Kd * nDl * Lc;
 
 				float3 H = normalize(L - ray.direction);
@@ -163,7 +164,7 @@ RT_PROGRAM void diffuse()
 
 		}
 	}
-	prd_radiance.result = color;
+	prd_diffuse.result = color;
 }
 
 //-----------------------------------------------------------------------------
@@ -184,7 +185,7 @@ rtDeclareVariable(float3, bg_color,,);
 
 RT_PROGRAM void miss()
 {
-	prd_radiance.result = bg_color;
+	prd_diffuse.result = bg_color;
 }
 
 //--------------------------------------------------------------

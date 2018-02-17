@@ -270,6 +270,7 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
+    <ClInclude Include="structs.h" />
     <ClInclude Include="random.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>
