@@ -259,7 +259,6 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="camera.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="util.cpp" />
   </ItemGroup>
@@ -269,7 +268,6 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
     <None Include="parallelogram.cu" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="camera.h" />
     <ClInclude Include="structs.h" />
     <ClInclude Include="random.h" />
     <ClInclude Include="util.h" />

@@ -86,9 +86,19 @@ bool actionState[ACTION_COUNT];
 
 void updateCamera();
 
+ParallelogramLight light;
+Buffer light_buffer;
+
 void glutDisplay()
 {
 	updateCamera();
+
+	light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
+							   548.6f,
+							   227.0f + sin(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f);
+	memcpy(light_buffer->map(), &light, sizeof(light));
+	light_buffer->unmap();
+	context["lights"]->setBuffer(light_buffer);
 
 	context->launch(0, width, height);
 	
@@ -169,19 +179,38 @@ GeometryInstance createParallelogram(
 	return gi;
 }
 
+/*
+void createBox()
+{
+	// Create box
+	Geometry box = context->createGeometry();
+	box->setPrimitiveCount(1u);
+	box->setBoundingBoxProgram(box_bounds);
+	box->setIntersectionProgram(box_intersect);
+	box["boxmin"]->setFloat(130.0f, 0.0f, 65.0f);
+	box["boxmax"]->setFloat(290.0f, 165.0f, 144.0f);
+
+	GeometryInstance gi = context->createGeometryInstance();
+	gi->setGeometry(box);
+	gis.push_back(gi);
+	setMaterial(gis.back(), diffuse, "diffuse_color", white);
+	return gi;
+}
+*/
+
 void createScene()
 {
 	// Light buffer
 	//BasicLight light = { make_float3(343.0f, 548.6f, 227.0f), make_float3(1.0f, 1.0f, 1.0f), 1 };
 
-	ParallelogramLight light;
+	//ParallelogramLight light;
 	light.corner = make_float3(343.0f, 548.6f, 227.0f);
 	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
-	light.v2 = make_float3(0.0f, 0.0f, 105.0f);
+	light.v2 = make_float3(0.0f, 0.0f, 130.0f);
 	light.normal = normalize(cross(light.v1, light.v2));
 	light.emission = make_float3(15.0f, 15.0f, 5.0f);
 
-	Buffer light_buffer = context->createBuffer(RT_BUFFER_INPUT);
+	light_buffer = context->createBuffer(RT_BUFFER_INPUT);
 	light_buffer->setFormat(RT_FORMAT_USER);
 	light_buffer->setElementSize(sizeof(ParallelogramLight));
 	light_buffer->setSize(1u);
@@ -193,20 +222,11 @@ void createScene()
 	Program box_bounds = context->createProgramFromPTXString(ptx, "box_bounds");
 	Program box_intersect = context->createProgramFromPTXString(ptx, "box_intersect");
 
-	// Create box
-	Geometry box = context->createGeometry();
-	box->setPrimitiveCount(1u);
-	box->setBoundingBoxProgram(box_bounds);
-	box->setIntersectionProgram(box_intersect);
-	box["boxmin"]->setFloat(-2.0f, 0.0f, -2.0f);
-	box["boxmax"]->setFloat(2.0f, 4.0f, 2.0f);
-
 	// Material
 	Material diffuse = context->createMaterial();
 	const char *ptx2 = loadCudaFile("main.cu");
 	diffuse->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "diffuse"));
 	diffuse->setAnyHitProgram(1, context->createProgramFromPTXString(ptx2, "shadow"));
-
 
 	diffuse["Ka"]->setFloat(0.3f, 0.3f, 0.3f);
 	diffuse["Kd"]->setFloat(0.6f, 0.7f, 0.8f);
@@ -298,7 +318,7 @@ void createScene()
 	
 	// Create geometry group
 	GeometryGroup geometry_group = context->createGeometryGroup(gis.begin(), gis.end());
-	geometry_group->setAcceleration(context->createAcceleration("Trbvh"));
+	geometry_group->setAcceleration(context->createAcceleration("NoAccel"));
 	context["scene_geometry"]->set(geometry_group);
 }
 
@@ -380,6 +400,8 @@ void glutKeyboardPress(unsigned char k, int, int)
 	case 'a': actionState[MOVE_LEFT] = true; break;
 	case 's': actionState[MOVE_BACKWARD] = true; break;
 	case 'd': actionState[MOVE_RIGHT] = true; break;
+	case 'q': actionState[MOVE_UP] = true; break;
+	case 'e': actionState[MOVE_DOWN] = true; break;
 	case 27: // ESC
 	{
 		destroyContext();
@@ -396,6 +418,8 @@ void glutKeyboardUp(unsigned char k, int, int)
 	case 'a': actionState[MOVE_LEFT] = false; break;
 	case 's': actionState[MOVE_BACKWARD] = false; break;
 	case 'd': actionState[MOVE_RIGHT] = false; break;
+	case 'q': actionState[MOVE_UP] = false; break;
+	case 'e': actionState[MOVE_DOWN] = false; break;
 	}
 }
 

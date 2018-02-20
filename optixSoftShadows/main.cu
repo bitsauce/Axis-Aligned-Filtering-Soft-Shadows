@@ -47,6 +47,7 @@ struct PerRayData_diffuse
 struct PerRayData_shadow
 {
 	float3 attenuation;
+	float3 hit_point;
 };
 
 //--------------------------------------------------------------
@@ -109,12 +110,15 @@ RT_PROGRAM void trace_ray()
 // Lambertian surface closest-hit
 //-----------------------------------------------------------------------------
 
+rtDeclareVariable(float3, diffuse_color, , );
 rtDeclareVariable(float3, Ka, , );
 rtDeclareVariable(float3, Ks, , );
 rtDeclareVariable(float, phong_exp, , );
 rtDeclareVariable(float3, Kd, , );
 rtDeclareVariable(float3, ambient_light_color, , );
 rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
+
+#define FLT_MAX          3.402823466e+38F        // max value
 
 RT_PROGRAM void diffuse()
 {
@@ -128,41 +132,91 @@ RT_PROGRAM void diffuse()
 	unsigned int seed = prd_diffuse.seed;
 	for(int i = 0; i < lights.size(); ++i)
 	{
-		//BasicLight light = lights[i];
-
-
-		// Choose random point on light
 		ParallelogramLight light = lights[i];
-		const float z1 = rnd(seed);
-		const float z2 = rnd(seed);
-		const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
+		const float3 light_center = light.corner + light.v1 * 0.5f + light.v2 * 0.5f;
 
-
-		float3 L = normalize(light_pos - hit_point);
-		float nDl = dot(ffnormal, L);
-
-		if(nDl > 0.0f)
+		// Send 9 rays
+		float d2_min = FLT_MAX; // Min distance from light to occluder
+		float d2_max = 0.0f; // Max distance from light to occluder
+		float d1 = length(hit_point - light_center); // Distance from light to receiver
+		for(int j = 0; j < 9; j++)
 		{
-			// Cast shadow ray
-			PerRayData_shadow shadow_prd;
-			shadow_prd.attenuation = make_float3(1.0f);
-			float Ldist = length(light_pos - hit_point);
-			Ray shadow_ray(hit_point, L, 1, EPSILON, Ldist);
-			rtTrace(scene_geometry, shadow_ray, shadow_prd);
-			float3 light_attenuation = shadow_prd.attenuation;
+			// Choose random point on light
+			const float z1 = rnd(seed);
+			const float z2 = rnd(seed);
+			const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
 
-			if(fmaxf(light_attenuation) > 0.0f)
+			float3 L = normalize(light_pos - hit_point);
+			float nDl = dot(ffnormal, L);
+			if(nDl > 0.0f) // Check if light is behind
 			{
-				float3 Lc = light_attenuation /* * light_color */;
-				color += Kd * nDl * Lc;
+				float Ldist = length(light_pos - hit_point); // TODO: Maybe d1 should be average of these?
 
-				float3 H = normalize(L - ray.direction);
-				float nDh = dot(ffnormal, H);
-				if(nDh > 0)
-					color += Ks * Lc * pow(nDh, phong_exp);
+				// Cast shadow ray
+				PerRayData_shadow shadow_prd;
+				shadow_prd.attenuation = make_float3(1.0f);
+
+				Ray shadow_ray(hit_point, L, 1, EPSILON, Ldist);
+				rtTrace(scene_geometry, shadow_ray, shadow_prd);
+
+				float3 light_attenuation = shadow_prd.attenuation;
+				if(fmaxf(light_attenuation) > 0.0f) // If we hit the light
+				{
+					float3 Lc = light_attenuation * diffuse_color;
+					color += Kd * nDl * Lc;
+
+					// Apply specularity
+					float3 H = normalize(L - ray.direction);
+					float nDh = dot(ffnormal, H);
+					if(nDh > 0)
+					{
+						color += Ks * Lc * pow(nDh, phong_exp);
+					}
+				}
+				else // Else if light source was occluded
+				{
+					const float d2 = length(shadow_prd.hit_point - light_pos) / Ldist;
+
+					// Store min d2
+					if(d2 < d2_min)
+					{
+						d2_min = d2;
+					}
+
+					// Store max d2
+					if(d2 > d2_max)
+					{
+						d2_max = d2;
+					}
+				}
 			}
-
 		}
+
+		color /= 9.f;
+		
+		if(d2_max > 0.f)//0.01f)
+			color = lerp(color, make_float3(1.0, 0.0, 0.0), 1.f - d2_max); // (600.f*2.f);
+
+		if(d1 < 10.0f) {
+			color = make_float3(1.f, 1.f, 1.f);
+		}
+
+
+		// Constants from the paper
+		/*const float k = 3.f;
+		const float alpha = 1.f;
+		const float mu = 2.f;
+
+		const float sigma = 1.f;//1.f / omega_max_L; // Standard deviation of Gaussian
+
+		omega_max_pix = 1 / depth;
+		omega_max_x = alpha * (d2_max / d1) * omega_max_pix;
+
+		// Calculate filter width at current pixel
+		beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), 1.f / omega_max_x);
+
+		// Calcuate number of additional samples
+		num_samples = 4 * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + alpha * 1.f / (1.f + s2), 2.f);*/
 	}
 	prd_diffuse.result = color;
 }
@@ -173,6 +227,7 @@ RT_PROGRAM void diffuse()
 
 RT_PROGRAM void shadow()
 {
+	prd_shadow.hit_point = ray.origin + t_hit * ray.direction;
 	prd_shadow.attenuation = make_float3(0);
 	rtTerminateRay();
 }
