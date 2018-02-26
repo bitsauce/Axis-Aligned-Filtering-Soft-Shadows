@@ -52,10 +52,17 @@
 
 using namespace optix;
 
+// Some forward declarations
+void updateCamera();
+void initWindow(int*, char**);
+void destroyContext();
+
+// OptiX context
 Context context = 0;
 const int width = 1280, height = 720;
+const char *mainPTX, *blurPTX, *parallelogramPTX;
 
-// Camera struct
+// Camera
 struct
 {
 	float3 position;   // Camera position
@@ -84,10 +91,12 @@ enum Action
 // Action state list
 bool actionState[ACTION_COUNT];
 
-void updateCamera();
-
 ParallelogramLight light;
 Buffer light_buffer;
+
+//--------------------------------------------------------------
+// Render loop
+//--------------------------------------------------------------
 
 void glutDisplay()
 {
@@ -101,8 +110,29 @@ void glutDisplay()
 	context["lights"]->setBuffer(light_buffer);
 
 	context->launch(0, width, height);
+	context->launch(1, width, height);
 	
-	sutil::displayBufferGL(context["output_buffer"]->getBuffer());
+	Buffer buffer = context["blur_output"]->getBuffer();
+	sutil::displayBufferGL(buffer);
+
+	/*RTsize w, h;
+	buffer->getSize(w, h);
+	RTsize byteSize = w * h * buffer->getElementSize();
+
+	float *output = reinterpret_cast<float*>(new char[byteSize]);
+	memcpy(output, buffer->map(), byteSize);
+	buffer->unmap();
+
+	float minval = 10000.0f;
+	float maxval = -10000.0f;
+	for(int i = 0; i < w*h; i += 4) {
+		minval = min(output[i+3], minval);
+		maxval = max(output[i+3], maxval);
+	}
+
+	printf("max: %f\nmin: %f", maxval, minval);
+
+	delete[] output;*/
 
 	static unsigned frame_count = 0;
 	sutil::displayFps(frame_count++);
@@ -129,14 +159,9 @@ void glutDisplay()
 	glutSwapBuffers();
 }
 
-void initWindow(int* argc, char** argv)
-{
-	glutInit(argc, argv);
-	glutInitDisplayMode(GLUT_RGB | GLUT_ALPHA | GLUT_DEPTH | GLUT_DOUBLE);
-	glutInitWindowSize(width, height);
-	glutInitWindowPosition(10, 10);
-	glutCreateWindow(argv[0]);
-}
+//--------------------------------------------------------------
+// Scene & geometry
+//--------------------------------------------------------------
 
 void setMaterial(
 	GeometryInstance& gi,
@@ -153,9 +178,8 @@ GeometryInstance createParallelogram(
 	const float3& offset1,
 	const float3& offset2)
 {
-	const char *ptx = loadCudaFile("parallelogram.cu");
-	Program pgram_bounding_box = context->createProgramFromPTXString(ptx, "bounds");
-	Program pgram_intersection = context->createProgramFromPTXString(ptx, "intersect");
+	Program pgram_bounding_box = context->createProgramFromPTXString(parallelogramPTX, "bounds");
+	Program pgram_intersection = context->createProgramFromPTXString(parallelogramPTX, "intersect");
 
 	Geometry parallelogram = context->createGeometry();
 	parallelogram->setPrimitiveCount(1u);
@@ -179,31 +203,9 @@ GeometryInstance createParallelogram(
 	return gi;
 }
 
-/*
-void createBox()
-{
-	// Create box
-	Geometry box = context->createGeometry();
-	box->setPrimitiveCount(1u);
-	box->setBoundingBoxProgram(box_bounds);
-	box->setIntersectionProgram(box_intersect);
-	box["boxmin"]->setFloat(130.0f, 0.0f, 65.0f);
-	box["boxmax"]->setFloat(290.0f, 165.0f, 144.0f);
-
-	GeometryInstance gi = context->createGeometryInstance();
-	gi->setGeometry(box);
-	gis.push_back(gi);
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	return gi;
-}
-*/
-
 void createScene()
 {
-	// Light buffer
-	//BasicLight light = { make_float3(343.0f, 548.6f, 227.0f), make_float3(1.0f, 1.0f, 1.0f), 1 };
-
-	//ParallelogramLight light;
+	// Setup light
 	light.corner = make_float3(343.0f, 548.6f, 227.0f);
 	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
 	light.v2 = make_float3(0.0f, 0.0f, 130.0f);
@@ -218,15 +220,10 @@ void createScene()
 	light_buffer->unmap();
 	context["lights"]->setBuffer(light_buffer);
 
-	const char *ptx = loadCudaFile("box.cu");
-	Program box_bounds = context->createProgramFromPTXString(ptx, "box_bounds");
-	Program box_intersect = context->createProgramFromPTXString(ptx, "box_intersect");
-
 	// Material
 	Material diffuse = context->createMaterial();
-	const char *ptx2 = loadCudaFile("main.cu");
-	diffuse->setClosestHitProgram(0, context->createProgramFromPTXString(ptx2, "diffuse"));
-	diffuse->setAnyHitProgram(1, context->createProgramFromPTXString(ptx2, "shadow"));
+	diffuse->setClosestHitProgram(0, context->createProgramFromPTXString(mainPTX, "diffuse"));
+	diffuse->setAnyHitProgram(1, context->createProgramFromPTXString(mainPTX, "shadow"));
 
 	diffuse["Ka"]->setFloat(0.3f, 0.3f, 0.3f);
 	diffuse["Kd"]->setFloat(0.6f, 0.7f, 0.8f);
@@ -322,6 +319,10 @@ void createScene()
 	context["scene_geometry"]->set(geometry_group);
 }
 
+//--------------------------------------------------------------
+// Camera
+//--------------------------------------------------------------
+
 void setupCamera()
 {
 	camera.position = make_float3(275.0f, 340.0f, -345.0f);
@@ -362,14 +363,9 @@ void updateCamera()
 	context["W"]->setFloat(camera_w);
 }
 
-void destroyContext()
-{
-	if(context)
-	{
-		context->destroy();
-		context = 0;
-	}
-}
+//--------------------------------------------------------------
+// Input controls
+//--------------------------------------------------------------
 
 void glutMousePress(int button, int state, int x, int y)
 {
@@ -423,6 +419,10 @@ void glutKeyboardUp(unsigned char k, int, int)
 	}
 }
 
+//--------------------------------------------------------------
+// Main
+//--------------------------------------------------------------
+
 int main(int argc, char* argv[])
 {
 	try
@@ -437,30 +437,37 @@ int main(int argc, char* argv[])
 		// Create optix context
 		context = Context::create();
 		context->setRayTypeCount(2);
-		context->setEntryPointCount(1);
+		context->setEntryPointCount(2);
+
+		// Load CUDA programs
+		mainPTX = loadCudaFile("main.cu");
+		blurPTX = loadCudaFile("gaussian_blur.cu");
+		parallelogramPTX = loadCudaFile("parallelogram.cu");
 
 		// Create output buffer
-		Buffer buffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
-
-		createScene();
-		setupCamera();
-		updateCamera();
+		Buffer mainProgramBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		Buffer blurProgramBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 
 		// Set ray generation program
-		const char *ptx = loadCudaFile("main.cu");
-		context->setRayGenerationProgram(0, context->createProgramFromPTXString(ptx, "trace_ray"));
-		context["output_buffer"]->set(buffer);
-
-		context["rr_begin_depth"]->setUint(1);
-		context["sqrt_num_samples"]->setUint(3); // 3*3=9 samples
+		context->setRayGenerationProgram(0, context->createProgramFromPTXString(mainPTX, "trace_ray"));
+		context["main_output"]->set(mainProgramBuffer);
 
 		// Exception program
-		context->setExceptionProgram(0, context->createProgramFromPTXString(ptx, "exception"));
+		context->setExceptionProgram(0, context->createProgramFromPTXString(mainPTX, "exception"));
 		context["bad_color"]->setFloat(1.0f, 0.0f, 1.0f);
 
 		// Miss program
-		context->setMissProgram(0, context->createProgramFromPTXString(ptx, "miss"));
+		context->setMissProgram(0, context->createProgramFromPTXString(mainPTX, "miss"));
 		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
+
+		// Set blur program
+		context->setRayGenerationProgram(1, context->createProgramFromPTXString(blurPTX, "blur"));
+		context["blur_output"]->set(blurProgramBuffer);
+
+		// Setup scene and camera
+		createScene();
+		setupCamera();
+		updateCamera();
 
 		context->validate();
 
@@ -483,4 +490,22 @@ int main(int argc, char* argv[])
 		glutKeyboardUpFunc(glutKeyboardUp);
 		glutMainLoop();
 	} SUTIL_CATCH(context->get())
+}
+
+void initWindow(int* argc, char** argv)
+{
+	glutInit(argc, argv);
+	glutInitDisplayMode(GLUT_RGB | GLUT_ALPHA | GLUT_DEPTH | GLUT_DOUBLE);
+	glutInitWindowSize(width, height);
+	glutInitWindowPosition(10, 10);
+	glutCreateWindow(argv[0]);
+}
+
+void destroyContext()
+{
+	if(context)
+	{
+		context->destroy();
+		context = 0;
+	}
 }

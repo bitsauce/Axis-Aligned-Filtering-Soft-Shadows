@@ -31,10 +31,10 @@
     <None Include="main.cu">
       <Filter>CUDA Files</Filter>
     </None>
-    <None Include="box.cu">
+    <None Include="parallelogram.cu">
       <Filter>CUDA Files</Filter>
     </None>
-    <None Include="parallelogram.cu">
+    <None Include="gaussian_blur.cu">
       <Filter>CUDA Files</Filter>
     </None>
   </ItemGroup>

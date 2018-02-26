@@ -40,7 +40,7 @@ using namespace optix;
 
 struct PerRayData_diffuse
 {
-	float3       result;
+	float4       result;
 	unsigned int seed;
 };
 
@@ -60,7 +60,7 @@ rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 
 // Output buffer (final image)
 // A 2-dimensional buffer of float4s
-rtBuffer<float4, 2> output_buffer;
+rtBuffer<float4, 2> main_output;
 
 // Scene geometry objects
 rtDeclareVariable(rtObject, scene_geometry,,);
@@ -87,7 +87,7 @@ rtBuffer<ParallelogramLight> lights;
 
 RT_PROGRAM void trace_ray()
 {
-	size_t2 screen = output_buffer.size(); // Screen size
+	size_t2 screen = main_output.size(); // Screen size
 	float2 d = make_float2(launch_index) / make_float2(screen) * 2.f - 1.f; // Pixel coordinate in [-1, 1]
 	float3 ray_origin = eye;
 	float3 ray_direction = normalize(d.x*U + d.y*V + W);
@@ -103,7 +103,7 @@ RT_PROGRAM void trace_ray()
 	rtTrace(scene_geometry, ray, prd);
 
 	// Set resulting color
-	output_buffer[launch_index] = make_float4(prd.result, 1.0f);
+	main_output[launch_index] = prd.result;
 }
 
 //-----------------------------------------------------------------------------
@@ -193,32 +193,43 @@ RT_PROGRAM void diffuse()
 		}
 
 		color /= 9.f;
-		
-		if(d2_max > 0.f)//0.01f)
-			color = lerp(color, make_float3(1.0, 0.0, 0.0), 1.f - d2_max); // (600.f*2.f);
-
-		if(d1 < 10.0f) {
-			color = make_float3(1.f, 1.f, 1.f);
-		}
 
 
 		// Constants from the paper
-		/*const float k = 3.f;
+		const float k = 3.f;
 		const float alpha = 1.f;
 		const float mu = 2.f;
 
 		const float sigma = 1.f;//1.f / omega_max_L; // Standard deviation of Gaussian
 
-		omega_max_pix = 1 / depth;
-		omega_max_x = alpha * (d2_max / d1) * omega_max_pix;
+		const float depth = length(t_hit * ray.direction);
+		const float omega_max_pix = 1.f / depth;
+		const float omega_max_x = alpha * (d2_max / d1) * omega_max_pix;
 
 		// Calculate filter width at current pixel
-		beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), 1.f / omega_max_x);
+		//const float beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), 1.f / omega_max_x);
+
+
+		//if(d2_max > 0.f)
+		//{
+		//	color = lerp(color, make_float3(1.0, 0.0, 0.0), 1.f - d2_max);
+		//}
+
+		if(d2_max > 0.f)
+		{
+			const float beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), -1000.0f);
+			prd_diffuse.result.w = beta;
+		}
+
+		if(d1 < 10.0f)
+		{
+			color = make_float3(1.f, 1.f, 1.f);
+		}
 
 		// Calcuate number of additional samples
-		num_samples = 4 * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + alpha * 1.f / (1.f + s2), 2.f);*/
+		//num_samples = 4 * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + alpha * 1.f / (1.f + s2), 2.f);
 	}
-	prd_diffuse.result = color;
+	prd_diffuse.result = make_float4(color, prd_diffuse.result.w);
 }
 
 //-----------------------------------------------------------------------------
@@ -240,7 +251,7 @@ rtDeclareVariable(float3, bg_color,,);
 
 RT_PROGRAM void miss()
 {
-	prd_diffuse.result = bg_color;
+	prd_diffuse.result = make_float4(bg_color, 0.f);
 }
 
 //--------------------------------------------------------------
@@ -251,5 +262,5 @@ rtDeclareVariable(float3, bad_color,,);
 
 RT_PROGRAM void exception()
 {
-	output_buffer[launch_index] = make_float4(bad_color, 1.0f);
+	main_output[launch_index] = make_float4(bad_color, 0.f);
 }
