@@ -265,6 +265,7 @@ copy "$(OPTIX_PATH)bin64\*.dll" "$(TargetDir)"</Command>
   <ItemGroup>
     <None Include="gaussian_blur.cu" />
     <None Include="main.cu" />
+    <None Include="normalize.cu" />
     <None Include="parallelogram.cu" />
   </ItemGroup>
   <ItemGroup>

@@ -4,6 +4,12 @@
 
 using namespace optix;
 
+enum RayTypes
+{
+	DIFFUSE_RAY,
+	SHADOW_RAY
+};
+
 // Point light
 struct BasicLight
 {

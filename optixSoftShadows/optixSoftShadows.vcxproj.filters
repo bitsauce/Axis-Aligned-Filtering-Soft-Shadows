@@ -37,5 +37,8 @@
     <None Include="gaussian_blur.cu">
       <Filter>CUDA Files</Filter>
     </None>
+    <None Include="normalize.cu">
+      <Filter>CUDA Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -46,6 +46,7 @@
 #include <string.h>
 #include <sutil.h>
 #include <sstream>
+#include <algorithm>
 
 #include "util.h"
 #include "structs.h"
@@ -60,7 +61,7 @@ void destroyContext();
 // OptiX context
 Context context = 0;
 const int width = 1280, height = 720;
-const char *mainPTX, *blurPTX, *parallelogramPTX;
+const char *mainPTX, *blurPTX, *parallelogramPTX, *normalizePTX;
 
 // Camera
 struct
@@ -91,12 +92,49 @@ enum Action
 // Action state list
 bool actionState[ACTION_COUNT];
 
+// CUDA programs
+enum
+{
+	DIFFUSE_PROGRAM,
+	BLUR_H_PROGRAM,
+	BLUR_V_PROGRAM,
+	NORMALIZE_PROGRAM
+};
+
+// Debug visualization
+enum
+{
+	DEFAULT,
+	SHOW_BETA,
+	SHOW_NUM_SAMPLES
+} state;
+
 ParallelogramLight light;
 Buffer light_buffer;
 
 //--------------------------------------------------------------
 // Render loop
 //--------------------------------------------------------------
+
+void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue)
+{
+	// Read CUDA buffer data
+	RTsize w, h;
+	buffer->getSize(w, h);
+	RTsize byteSize = w * h * buffer->getElementSize();
+	float *output = reinterpret_cast<float*>(new char[byteSize]);
+	memcpy(output, buffer->map(), byteSize);
+	buffer->unmap();
+
+	// Extract min and max value
+	minValue = FLT_MAX;
+	maxValue = -FLT_MAX;
+	for(int i = 0; i < w*h; i++) {
+		minValue = std::min(output[i], minValue);
+		maxValue = std::max(output[i], maxValue);
+	}
+	delete[] output;
+}
 
 void glutDisplay()
 {
@@ -109,35 +147,59 @@ void glutDisplay()
 	light_buffer->unmap();
 	context["lights"]->setBuffer(light_buffer);
 
-	context->launch(0, width, height);
-	context->launch(1, width, height);
-	
-	Buffer buffer = context["blur_output"]->getBuffer();
-	sutil::displayBufferGL(buffer);
+	// Render diffuse image
+	context->launch(DIFFUSE_PROGRAM, width, height);
 
-	/*RTsize w, h;
-	buffer->getSize(w, h);
-	RTsize byteSize = w * h * buffer->getElementSize();
+	switch(state)
+	{
+		case DEFAULT:
+		{
+			// Gaussian blur
+			context->launch(BLUR_H_PROGRAM, width, height);
+			context->launch(BLUR_V_PROGRAM, width, height);
+			sutil::displayBufferGL(context["blur_output"]->getBuffer());
+		}
+		break;
 
-	float *output = reinterpret_cast<float*>(new char[byteSize]);
-	memcpy(output, buffer->map(), byteSize);
-	buffer->unmap();
+		case SHOW_BETA:
+		{
+			// Normalize and display the beta buffer
+			float minValue, maxValue;
+			Buffer buffer = context["beta_buffer"]->getBuffer();
+			getBufferMinMax(buffer, minValue, maxValue);
+			context["max_value"]->setFloat(maxValue);
+			context["normalize_buffer"]->set(buffer);
+			context->launch(NORMALIZE_PROGRAM, width, height);
+			sutil::displayBufferGL(buffer);
 
-	float minval = 10000.0f;
-	float maxval = -10000.0f;
-	for(int i = 0; i < w*h; i += 4) {
-		minval = min(output[i+3], minval);
-		maxval = max(output[i+3], maxval);
+			std::stringstream msg;
+			msg << "Max beta: " << maxValue;
+			sutil::displayText(msg.str().c_str(), width - 200, height - 35);
+		}
+		break;
+
+		case SHOW_NUM_SAMPLES:
+		{
+			// Normalize and display the adaptive sampling buffer
+			float minValue, maxValue;
+			Buffer buffer = context["num_samples_buffer"]->getBuffer();
+			getBufferMinMax(buffer, minValue, maxValue);
+			context["max_value"]->setFloat(maxValue);
+			context["normalize_buffer"]->set(buffer);
+			context->launch(NORMALIZE_PROGRAM, width, height);
+			sutil::displayBufferGL(buffer);
+
+			std::stringstream msg;
+			msg << "Max samples: " << maxValue;
+			sutil::displayText(msg.str().c_str(), width - 200, height - 35);
+		}
+		break;
 	}
 
-	printf("max: %f\nmin: %f", maxval, minval);
-
-	delete[] output;*/
-
+	// Display world info
 	static unsigned frame_count = 0;
 	sutil::displayFps(frame_count++);
 	sutil::displayText("SoftShadows", 10, height - 15);
-
 	{
 		std::stringstream msg;
 		msg << "Yaw: " << camera.yaw;
@@ -155,7 +217,6 @@ void glutDisplay()
 		msg << "Position: " << camera.position;
 		sutil::displayText(msg.str().c_str(), 10, height - 75);
 	}
-	
 	glutSwapBuffers();
 }
 
@@ -222,8 +283,8 @@ void createScene()
 
 	// Material
 	Material diffuse = context->createMaterial();
-	diffuse->setClosestHitProgram(0, context->createProgramFromPTXString(mainPTX, "diffuse"));
-	diffuse->setAnyHitProgram(1, context->createProgramFromPTXString(mainPTX, "shadow"));
+	diffuse->setClosestHitProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "diffuse"));
+	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(mainPTX, "shadow"));
 
 	diffuse["Ka"]->setFloat(0.3f, 0.3f, 0.3f);
 	diffuse["Kd"]->setFloat(0.6f, 0.7f, 0.8f);
@@ -416,6 +477,8 @@ void glutKeyboardUp(unsigned char k, int, int)
 	case 'd': actionState[MOVE_RIGHT] = false; break;
 	case 'q': actionState[MOVE_UP] = false; break;
 	case 'e': actionState[MOVE_DOWN] = false; break;
+	case 'b': state = state == SHOW_BETA ? DEFAULT : SHOW_BETA; break;
+	case 'n': state = state == SHOW_NUM_SAMPLES ? DEFAULT : SHOW_NUM_SAMPLES; break;
 	}
 }
 
@@ -437,32 +500,40 @@ int main(int argc, char* argv[])
 		// Create optix context
 		context = Context::create();
 		context->setRayTypeCount(2);
-		context->setEntryPointCount(2);
+		context->setEntryPointCount(4);
 
 		// Load CUDA programs
 		mainPTX = loadCudaFile("main.cu");
 		blurPTX = loadCudaFile("gaussian_blur.cu");
 		parallelogramPTX = loadCudaFile("parallelogram.cu");
+		normalizePTX = loadCudaFile("normalize.cu");
 
 		// Create output buffer
-		Buffer mainProgramBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		Buffer diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		Buffer betaBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 		Buffer blurProgramBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 
 		// Set ray generation program
-		context->setRayGenerationProgram(0, context->createProgramFromPTXString(mainPTX, "trace_ray"));
-		context["main_output"]->set(mainProgramBuffer);
+		context->setRayGenerationProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "trace_ray"));
+		context["diffuse_buffer"]->set(diffuseBuffer);
+		context["beta_buffer"]->set(betaBuffer);
 
 		// Exception program
-		context->setExceptionProgram(0, context->createProgramFromPTXString(mainPTX, "exception"));
+		context->setExceptionProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "exception"));
 		context["bad_color"]->setFloat(1.0f, 0.0f, 1.0f);
 
 		// Miss program
-		context->setMissProgram(0, context->createProgramFromPTXString(mainPTX, "miss"));
+		context->setMissProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "miss"));
 		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
 
 		// Set blur program
-		context->setRayGenerationProgram(1, context->createProgramFromPTXString(blurPTX, "blur"));
+		context->setRayGenerationProgram(BLUR_H_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurH"));
+		context->setRayGenerationProgram(BLUR_V_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurV"));
 		context["blur_output"]->set(blurProgramBuffer);
+
+		// Set normalize program
+		context->setRayGenerationProgram(NORMALIZE_PROGRAM, context->createProgramFromPTXString(normalizePTX, "normalize"));
+		context["normalize_buffer"]->set(betaBuffer);
 
 		// Setup scene and camera
 		createScene();

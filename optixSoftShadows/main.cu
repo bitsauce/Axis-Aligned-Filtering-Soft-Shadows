@@ -40,8 +40,10 @@ using namespace optix;
 
 struct PerRayData_diffuse
 {
-	float4       result;
-	unsigned int seed;
+	float3       color;         // Diffuse color
+	float		 beta;			// Filter width (screen-space standard deviation)
+	unsigned int num_samples;	// Number of adaptive samples
+	unsigned int seed;          // Seed for random sampling
 };
 
 struct PerRayData_shadow
@@ -55,12 +57,13 @@ struct PerRayData_shadow
 //--------------------------------------------------------------
 
 // Input pixel-coordinate
-// An uint2 value (x, y) bound to internal state variable "rtLaunchIndex"
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 
-// Output buffer (final image)
-// A 2-dimensional buffer of float4s
-rtBuffer<float4, 2> main_output;
+// Diffuse color buffer
+rtBuffer<float4, 2> diffuse_buffer;
+
+// Beta buffer (gaussian standard deviation)
+rtBuffer<float, 2> beta_buffer;
 
 // Scene geometry objects
 rtDeclareVariable(rtObject, scene_geometry,,);
@@ -87,23 +90,25 @@ rtBuffer<ParallelogramLight> lights;
 
 RT_PROGRAM void trace_ray()
 {
-	size_t2 screen = main_output.size(); // Screen size
+	size_t2 screen = diffuse_buffer.size(); // Screen size
 	float2 d = make_float2(launch_index) / make_float2(screen) * 2.f - 1.f; // Pixel coordinate in [-1, 1]
 	float3 ray_origin = eye;
 	float3 ray_direction = normalize(d.x*U + d.y*V + W);
 
 	// Create ray from camera into scene
-	Ray ray(ray_origin, ray_direction, 0, EPSILON);
+	Ray ray(ray_origin, ray_direction, DIFFUSE_RAY, EPSILON);
 
 	// Per radiance data
 	PerRayData_diffuse prd;
 	prd.seed = tea<16>(screen.x*launch_index.y + launch_index.x, 0);//frame_number);
+	prd.beta = 0.f;
 
 	// Trace geometry
 	rtTrace(scene_geometry, ray, prd);
 
-	// Set resulting color
-	main_output[launch_index] = prd.result;
+	// Set resulting diffuse color and beta
+	diffuse_buffer[launch_index] = make_float4(prd.color, 1.f);
+	beta_buffer[launch_index] = prd.beta;
 }
 
 //-----------------------------------------------------------------------------
@@ -118,7 +123,7 @@ rtDeclareVariable(float3, Kd, , );
 rtDeclareVariable(float3, ambient_light_color, , );
 rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
 
-#define FLT_MAX          3.402823466e+38F        // max value
+#define FLT_MAX 3.402823466e+38F
 
 RT_PROGRAM void diffuse()
 {
@@ -136,8 +141,8 @@ RT_PROGRAM void diffuse()
 		const float3 light_center = light.corner + light.v1 * 0.5f + light.v2 * 0.5f;
 
 		// Send 9 rays
-		float d2_min = FLT_MAX; // Min distance from light to occluder
-		float d2_max = 0.0f; // Max distance from light to occluder
+		float d2_min = FLT_MAX;  // Min distance from light to occluder
+		float d2_max = -FLT_MAX; // Max distance from light to occluder
 		float d1 = length(hit_point - light_center); // Distance from light to receiver
 		for(int j = 0; j < 9; j++)
 		{
@@ -156,7 +161,7 @@ RT_PROGRAM void diffuse()
 				PerRayData_shadow shadow_prd;
 				shadow_prd.attenuation = make_float3(1.0f);
 
-				Ray shadow_ray(hit_point, L, 1, EPSILON, Ldist);
+				Ray shadow_ray(hit_point, L, SHADOW_RAY, EPSILON, Ldist);
 				rtTrace(scene_geometry, shadow_ray, shadow_prd);
 
 				float3 light_attenuation = shadow_prd.attenuation;
@@ -192,44 +197,54 @@ RT_PROGRAM void diffuse()
 			}
 		}
 
+		// TODO: Diffuse color should maybe be sampled only once
+		// and not averaged over 9 samples?
+		// (Doesnt make sense as occluded pixels will not have 9 color samples)
 		color /= 9.f;
 
+		// DEBUG: Show the light
+		if(d1 < 10.0f)
+		{
+			color = make_float3(1.f, 1.f, 1.f);
+		}
 
 		// Constants from the paper
 		const float k = 3.f;
 		const float alpha = 1.f;
 		const float mu = 2.f;
 
-		const float sigma = 1.f;//1.f / omega_max_L; // Standard deviation of Gaussian
+		// Standard deviation of Gaussian of the light
+		// TODO: Experiment with different sigmas
+		const float sigma = 130.f / 2.f;
+
+		const float s1 = (d1 / d2_min) - 1.f;
+		const float s2 = (d1 / d2_max) - 1.f;
+		const float inv_s2 = alpha / (1.f + s2);
 
 		const float depth = length(t_hit * ray.direction);
 		const float omega_max_pix = 1.f / depth;
-		const float omega_max_x = alpha * (d2_max / d1) * omega_max_pix;
+		// TODO: d should be calculated as the average 3D eucledean distance between this pixels hitpoint and it's neighbouring pixels
+		// persumably this should be calculated in its own pass beforehand
+		const float omega_max_x = inv_s2 * omega_max_pix;
 
-		// Calculate filter width at current pixel
-		//const float beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), 1.f / omega_max_x);
-
-
-		//if(d2_max > 0.f)
-		//{
-		//	color = lerp(color, make_float3(1.0, 0.0, 0.0), 1.f - d2_max);
-		//}
-
+		// If this pixel was occluded (that is, d2_max > 0)
 		if(d2_max > 0.f)
 		{
-			const float beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), -1000.0f);
-			prd_diffuse.result.w = beta;
+			// Calculate filter width at current pixel
+			const float beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), //1.f / omega_max_x); // TODO: Calculate the omega_max_x and use it
+																					   -1000.0f);
+			prd_diffuse.beta = beta;
 		}
 
-		if(d1 < 10.0f)
-		{
-			color = make_float3(1.f, 1.f, 1.f);
-		}
+		// Calculate pixel area and light area
+		const float Ap = 1.f / (omega_max_pix * omega_max_pix);
+		const float Al = 4.f * sigma * sigma;
 
 		// Calcuate number of additional samples
-		//num_samples = 4 * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + alpha * 1.f / (1.f + s2), 2.f);
+		const float num_samples = 4 * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + inv_s2, 2.f);
+		prd_diffuse.num_samples = num_samples;
 	}
-	prd_diffuse.result = make_float4(color, prd_diffuse.result.w);
+	prd_diffuse.color = color;
 }
 
 //-----------------------------------------------------------------------------
@@ -251,7 +266,7 @@ rtDeclareVariable(float3, bg_color,,);
 
 RT_PROGRAM void miss()
 {
-	prd_diffuse.result = make_float4(bg_color, 0.f);
+	prd_diffuse.color = bg_color;
 }
 
 //--------------------------------------------------------------
@@ -262,5 +277,6 @@ rtDeclareVariable(float3, bad_color,,);
 
 RT_PROGRAM void exception()
 {
-	main_output[launch_index] = make_float4(bad_color, 0.f);
+	diffuse_buffer[launch_index] = make_float4(bad_color, 1.f);
+	beta_buffer[launch_index] = 0.f;
 }
