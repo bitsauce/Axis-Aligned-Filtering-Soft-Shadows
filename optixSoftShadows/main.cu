@@ -140,6 +140,36 @@ RT_PROGRAM void diffuse()
 		ParallelogramLight light = lights[i];
 		const float3 light_center = light.corner + light.v1 * 0.5f + light.v2 * 0.5f;
 
+		// Sample color
+		float3 L = normalize(light_center - hit_point);
+		float nDl = dot(ffnormal, L);
+		if (nDl > 0.0f) // Check if light is behind
+		{
+			float Ldist = length(light_center - hit_point);
+
+			// Cast shadow ray
+			PerRayData_shadow shadow_prd;
+			shadow_prd.attenuation = make_float3(1.0f);
+
+			Ray shadow_ray(hit_point, L, SHADOW_RAY, EPSILON, Ldist);
+			rtTrace(scene_geometry, shadow_ray, shadow_prd);
+
+			float3 light_attenuation = shadow_prd.attenuation;
+			if (fmaxf(light_attenuation) > 0.0f) // If we hit the light
+			{
+				float3 Lc = light_attenuation * diffuse_color;
+				color += Kd * nDl * Lc;
+
+				// Apply specularity
+				float3 H = normalize(L - ray.direction);
+				float nDh = dot(ffnormal, H);
+				if (nDh > 0)
+				{
+					color += Ks * Lc * pow(nDh, phong_exp);
+				}
+			}
+		}
+
 		// Send 9 rays
 		float d2_min = FLT_MAX;  // Min distance from light to occluder
 		float d2_max = -FLT_MAX; // Max distance from light to occluder
@@ -153,9 +183,10 @@ RT_PROGRAM void diffuse()
 
 			float3 L = normalize(light_pos - hit_point);
 			float nDl = dot(ffnormal, L);
-			if(nDl > 0.0f) // Check if light is behind
+			//if(nDl > 0.0f) // Check if light is behind
 			{
-				float Ldist = length(light_pos - hit_point); // TODO: Maybe d1 should be average of these?
+				// TODO: Maybe d1 should be average of these?
+				float Ldist = length(light_pos - hit_point);
 
 				// Cast shadow ray
 				PerRayData_shadow shadow_prd;
@@ -165,22 +196,9 @@ RT_PROGRAM void diffuse()
 				rtTrace(scene_geometry, shadow_ray, shadow_prd);
 
 				float3 light_attenuation = shadow_prd.attenuation;
-				if(fmaxf(light_attenuation) > 0.0f) // If we hit the light
+				if(fmaxf(light_attenuation) <= 0.0f) // If light source was occluded
 				{
-					float3 Lc = light_attenuation * diffuse_color;
-					color += Kd * nDl * Lc;
-
-					// Apply specularity
-					float3 H = normalize(L - ray.direction);
-					float nDh = dot(ffnormal, H);
-					if(nDh > 0)
-					{
-						color += Ks * Lc * pow(nDh, phong_exp);
-					}
-				}
-				else // Else if light source was occluded
-				{
-					const float d2 = length(shadow_prd.hit_point - light_pos) / Ldist;
+					const float d2 = length(shadow_prd.hit_point - light_pos);
 
 					// Store min d2
 					if(d2 < d2_min)
@@ -196,11 +214,6 @@ RT_PROGRAM void diffuse()
 				}
 			}
 		}
-
-		// TODO: Diffuse color should maybe be sampled only once
-		// and not averaged over 9 samples?
-		// (Doesnt make sense as occluded pixels will not have 9 color samples)
-		color /= 9.f;
 
 		// DEBUG: Show the light
 		if(d1 < 10.0f)

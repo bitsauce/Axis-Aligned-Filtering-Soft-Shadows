@@ -47,6 +47,8 @@
 #include <sutil.h>
 #include <sstream>
 #include <algorithm>
+#include <numeric>
+#include <list>
 
 #include "util.h"
 #include "structs.h"
@@ -108,6 +110,7 @@ enum
 	SHOW_BETA,
 	SHOW_NUM_SAMPLES
 } state;
+bool animateLight = true;
 
 ParallelogramLight light;
 Buffer light_buffer;
@@ -116,7 +119,7 @@ Buffer light_buffer;
 // Render loop
 //--------------------------------------------------------------
 
-void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue)
+void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue, float &avg)
 {
 	// Read CUDA buffer data
 	RTsize w, h;
@@ -129,23 +132,31 @@ void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue)
 	// Extract min and max value
 	minValue = FLT_MAX;
 	maxValue = -FLT_MAX;
+	std::list<float> values;
 	for(int i = 0; i < w*h; i++) {
 		minValue = std::min(output[i], minValue);
 		maxValue = std::max(output[i], maxValue);
+		if(output[i] > 0.0f) {
+			values.push_back(output[i]);
+		}
 	}
 	delete[] output;
+
+	avg = std::accumulate(values.begin(), values.end(), 0.0f) / values.size();
 }
 
 void glutDisplay()
 {
 	updateCamera();
 
-	light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
-							   548.6f,
-							   227.0f + sin(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f);
-	memcpy(light_buffer->map(), &light, sizeof(light));
-	light_buffer->unmap();
-	context["lights"]->setBuffer(light_buffer);
+	if(animateLight) {
+		light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
+								   548.6f,
+								   227.0f + sin(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f);
+		memcpy(light_buffer->map(), &light, sizeof(light));
+		light_buffer->unmap();
+		context["lights"]->setBuffer(light_buffer);
+	}
 
 	// Render diffuse image
 	context->launch(DIFFUSE_PROGRAM, width, height);
@@ -164,26 +175,34 @@ void glutDisplay()
 		case SHOW_BETA:
 		{
 			// Normalize and display the beta buffer
-			float minValue, maxValue;
+			float minValue, maxValue, avg;
 			Buffer buffer = context["beta_buffer"]->getBuffer();
-			getBufferMinMax(buffer, minValue, maxValue);
+			getBufferMinMax(buffer, minValue, maxValue, avg);
 			context["max_value"]->setFloat(maxValue);
 			context["normalize_buffer"]->set(buffer);
 			context->launch(NORMALIZE_PROGRAM, width, height);
 			sutil::displayBufferGL(buffer);
 
-			std::stringstream msg;
-			msg << "Max beta: " << maxValue;
-			sutil::displayText(msg.str().c_str(), width - 200, height - 35);
+			{
+				std::stringstream msg;
+				msg << "Max beta: " << maxValue;
+				sutil::displayText(msg.str().c_str(), width - 200, height - 35);
+			}
+
+			{
+				std::stringstream msg;
+				msg << "Avg beta: " << avg;
+				sutil::displayText(msg.str().c_str(), width - 200, height - 55);
+			}
 		}
 		break;
 
 		case SHOW_NUM_SAMPLES:
 		{
 			// Normalize and display the adaptive sampling buffer
-			float minValue, maxValue;
+			float minValue, maxValue, avg;
 			Buffer buffer = context["num_samples_buffer"]->getBuffer();
-			getBufferMinMax(buffer, minValue, maxValue);
+			getBufferMinMax(buffer, minValue, maxValue, avg);
 			context["max_value"]->setFloat(maxValue);
 			context["normalize_buffer"]->set(buffer);
 			context->launch(NORMALIZE_PROGRAM, width, height);
@@ -477,6 +496,7 @@ void glutKeyboardUp(unsigned char k, int, int)
 	case 'd': actionState[MOVE_RIGHT] = false; break;
 	case 'q': actionState[MOVE_UP] = false; break;
 	case 'e': actionState[MOVE_DOWN] = false; break;
+	case 'p': animateLight = !animateLight; break;
 	case 'b': state = state == SHOW_BETA ? DEFAULT : SHOW_BETA; break;
 	case 'n': state = state == SHOW_NUM_SAMPLES ? DEFAULT : SHOW_NUM_SAMPLES; break;
 	}
