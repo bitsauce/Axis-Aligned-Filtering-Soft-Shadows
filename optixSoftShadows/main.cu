@@ -27,6 +27,7 @@
  */
 
 #include <optixu/optixu_math_namespace.h>
+#include <optixu/optixu_matrix_namespace.h>
 #include "structs.h"
 #include "random.h"
 
@@ -41,7 +42,9 @@ using namespace optix;
 struct PerRayData_diffuse
 {
 	float3       color;         // Diffuse color
-	float		 beta;			// Filter width (screen-space standard deviation)
+	float        depth;			// Sample depth
+	float2       projected_distance;
+	float        beta;			// Filter width (screen-space standard deviation)
 	unsigned int num_samples;	// Number of adaptive samples
 	unsigned int seed;          // Seed for random sampling
 };
@@ -64,6 +67,12 @@ rtBuffer<float4, 2> diffuse_buffer;
 
 // Beta buffer (gaussian standard deviation)
 rtBuffer<float, 2> beta_buffer;
+
+// Depth buffer
+rtBuffer<float, 2> depth_buffer;
+
+// Projected distances buffer (offset of screen-space gaussian)
+rtBuffer<float2, 2> projected_distances_buffer;
 
 // Scene geometry objects
 rtDeclareVariable(rtObject, scene_geometry,,);
@@ -109,6 +118,8 @@ RT_PROGRAM void trace_ray()
 	// Set resulting diffuse color and beta
 	diffuse_buffer[launch_index] = make_float4(prd.color, 1.f);
 	beta_buffer[launch_index] = prd.beta;
+	depth_buffer[launch_index] = prd.depth;
+	projected_distances_buffer[launch_index] = prd.projected_distance;
 }
 
 //-----------------------------------------------------------------------------
@@ -133,12 +144,21 @@ RT_PROGRAM void diffuse()
 	float3 color = Ka * ambient_light_color;
 
 	float3 hit_point = ray.origin + t_hit * ray.direction;
-
+	
 	unsigned int seed = prd_diffuse.seed;
 	for(int i = 0; i < lights.size(); ++i)
 	{
 		ParallelogramLight light = lights[i];
 		const float3 light_center = light.corner + light.v1 * 0.5f + light.v2 * 0.5f;
+
+		Matrix3x3 projection_matrix;
+		projection_matrix.setRow(0, light.v1);
+		projection_matrix.setRow(1, light.v2);
+		projection_matrix.setRow(2, light.normal);
+
+		float3 p_projected = projection_matrix * hit_point;
+		prd_diffuse.projected_distance = make_float2(p_projected);
+
 
 		// Sample color
 		float3 L = normalize(light_center - hit_point);
@@ -258,6 +278,7 @@ RT_PROGRAM void diffuse()
 		prd_diffuse.num_samples = num_samples;
 	}
 	prd_diffuse.color = color;
+	prd_diffuse.depth = length(hit_point - ray.origin);
 }
 
 //-----------------------------------------------------------------------------
@@ -280,6 +301,7 @@ rtDeclareVariable(float3, bg_color,,);
 RT_PROGRAM void miss()
 {
 	prd_diffuse.color = bg_color;
+	prd_diffuse.depth = 0.f;
 }
 
 //--------------------------------------------------------------

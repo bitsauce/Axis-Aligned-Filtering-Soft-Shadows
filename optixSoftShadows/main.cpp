@@ -104,16 +104,23 @@ enum
 };
 
 // Debug visualization
-enum
+enum State
 {
 	DEFAULT,
+	SHOW_DIFFUSE,
+	SHOW_DEPTH,
+	SHOW_H_BLUR,
+	SHOW_V_BLUR,
 	SHOW_BETA,
-	SHOW_NUM_SAMPLES
-} state;
+	SHOW_NUM_SAMPLES,
+	NUM_STATES
+};
+State state = DEFAULT;
 bool animateLight = true;
 
 ParallelogramLight light;
 Buffer light_buffer;
+Buffer diffuseBuffer, depthBuffer, projectedDistancesBuffer, betaBuffer, blurHBuffer, blurVBuffer;
 
 //--------------------------------------------------------------
 // Render loop
@@ -145,6 +152,35 @@ void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue, float &avg
 	avg = std::accumulate(values.begin(), values.end(), 0.0f) / values.size();
 }
 
+void normalizeAndDisplayBuffer(Buffer buffer)
+{
+	// Normalize and display the beta buffer
+	float minValue, maxValue, avgValue;
+	getBufferMinMax(buffer, minValue, maxValue, avgValue);
+	context["max_value"]->setFloat(maxValue);
+	context["normalize_buffer"]->set(buffer);
+	context->launch(NORMALIZE_PROGRAM, width, height);
+	sutil::displayBufferGL(buffer);
+
+	{
+		std::stringstream msg;
+		msg << "Min: " << minValue;
+		sutil::displayText(msg.str().c_str(), width - 200, height - 35);
+	}
+
+	{
+		std::stringstream msg;
+		msg << "Max: " << maxValue;
+		sutil::displayText(msg.str().c_str(), width - 200, height - 55);
+	}
+
+	{
+		std::stringstream msg;
+		msg << "Avg: " << avgValue;
+		sutil::displayText(msg.str().c_str(), width - 200, height - 75);
+	}
+}
+
 void glutDisplay()
 {
 	updateCamera();
@@ -161,6 +197,8 @@ void glutDisplay()
 	// Render diffuse image
 	context->launch(DIFFUSE_PROGRAM, width, height);
 
+	context["blur_h_buffer"]->set(diffuseBuffer);
+
 	switch(state)
 	{
 		case DEFAULT:
@@ -168,7 +206,34 @@ void glutDisplay()
 			// Gaussian blur
 			context->launch(BLUR_H_PROGRAM, width, height);
 			context->launch(BLUR_V_PROGRAM, width, height);
-			sutil::displayBufferGL(context["blur_output"]->getBuffer());
+			sutil::displayBufferGL(context["blur_v_buffer"]->getBuffer());
+		}
+		break;
+
+		case SHOW_DIFFUSE:
+		{
+			sutil::displayBufferGL(context["diffuse_buffer"]->getBuffer());
+		}
+		break;
+
+		case SHOW_DEPTH:
+		{
+			normalizeAndDisplayBuffer(context["depth_buffer"]->getBuffer());
+		}
+		break;
+
+		case SHOW_H_BLUR:
+		{
+			context->launch(BLUR_H_PROGRAM, width, height);
+			sutil::displayBufferGL(context["blur_h_buffer"]->getBuffer());
+		}
+		break;
+
+		case SHOW_V_BLUR:
+		{
+			context["blur_h_buffer"]->set(diffuseBuffer);
+			context->launch(BLUR_V_PROGRAM, width, height);
+			sutil::displayBufferGL(context["blur_v_buffer"]->getBuffer());
 		}
 		break;
 
@@ -215,10 +280,22 @@ void glutDisplay()
 		break;
 	}
 
+	std::string stateName = "MISSING";
+	switch(state)
+	{
+	case DEFAULT: stateName = "SoftShadows"; break;
+	case SHOW_DIFFUSE: stateName = "Diffuse"; break;
+	case SHOW_DEPTH: stateName = "Depth"; break;
+	case SHOW_H_BLUR: stateName = "Blur H"; break;
+	case SHOW_V_BLUR: stateName = "Blur V"; break;
+	case SHOW_BETA: stateName = "Beta"; break;
+	case SHOW_NUM_SAMPLES: stateName = "Num Samples"; break;
+	}
+
 	// Display world info
 	static unsigned frame_count = 0;
 	sutil::displayFps(frame_count++);
-	sutil::displayText("SoftShadows", 10, height - 15);
+	sutil::displayText(stateName.c_str(), 10, height - 15);
 	{
 		std::stringstream msg;
 		msg << "Yaw: " << camera.yaw;
@@ -497,8 +574,8 @@ void glutKeyboardUp(unsigned char k, int, int)
 	case 'q': actionState[MOVE_UP] = false; break;
 	case 'e': actionState[MOVE_DOWN] = false; break;
 	case 'p': animateLight = !animateLight; break;
-	case 'b': state = state == SHOW_BETA ? DEFAULT : SHOW_BETA; break;
-	case 'n': state = state == SHOW_NUM_SAMPLES ? DEFAULT : SHOW_NUM_SAMPLES; break;
+	case '2': state = State((state + 1) % NUM_STATES); break;
+	case '1': state = State((state - 1 + NUM_STATES) % NUM_STATES); break;
 	}
 }
 
@@ -529,14 +606,19 @@ int main(int argc, char* argv[])
 		normalizePTX = loadCudaFile("normalize.cu");
 
 		// Create output buffer
-		Buffer diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
-		Buffer betaBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
-		Buffer blurProgramBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		depthBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
+		projectedDistancesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT2, width, height, true);
+		betaBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
+		blurHBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		blurVBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 
 		// Set ray generation program
 		context->setRayGenerationProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "trace_ray"));
 		context["diffuse_buffer"]->set(diffuseBuffer);
 		context["beta_buffer"]->set(betaBuffer);
+		context["depth_buffer"]->set(depthBuffer);
+		context["projected_distances_buffer"]->set(projectedDistancesBuffer);
 
 		// Exception program
 		context->setExceptionProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "exception"));
@@ -549,7 +631,8 @@ int main(int argc, char* argv[])
 		// Set blur program
 		context->setRayGenerationProgram(BLUR_H_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurH"));
 		context->setRayGenerationProgram(BLUR_V_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurV"));
-		context["blur_output"]->set(blurProgramBuffer);
+		context["blur_h_buffer"]->set(blurHBuffer);
+		context["blur_v_buffer"]->set(blurVBuffer);
 
 		// Set normalize program
 		context->setRayGenerationProgram(NORMALIZE_PROGRAM, context->createProgramFromPTXString(normalizePTX, "normalize"));
