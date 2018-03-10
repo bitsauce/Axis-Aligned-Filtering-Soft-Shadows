@@ -44,6 +44,7 @@ struct PerRayData_diffuse
 	float3       color;         // Diffuse color
 	float        depth;			// Sample depth
 	float2       projected_distance;
+	float        object_id;
 	float        beta;			// Filter width (screen-space standard deviation)
 	unsigned int num_samples;	// Number of adaptive samples
 	unsigned int seed;          // Seed for random sampling
@@ -62,20 +63,14 @@ struct PerRayData_shadow
 // Input pixel-coordinate
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 
-// Diffuse color buffer
-rtBuffer<float4, 2> diffuse_buffer;
-
-// Beta buffer (gaussian standard deviation)
-rtBuffer<float, 2> beta_buffer;
-
-// Depth buffer
-rtBuffer<float, 2> depth_buffer;
-
-// Projected distances buffer (offset of screen-space gaussian)
-rtBuffer<float2, 2> projected_distances_buffer;
+rtBuffer<float4, 2> diffuse_buffer;             // Diffuse color buffer
+rtBuffer<float,  2> beta_buffer;                // Beta buffer (gaussian standard deviation)
+rtBuffer<float,  2> depth_buffer;               // Depth buffer
+rtBuffer<float,  2> object_id_buffer;           // Object id buffer
+rtBuffer<float2, 2> projected_distances_buffer; // Projected distances buffer (offset of screen-space gaussian)
 
 // Scene geometry objects
-rtDeclareVariable(rtObject, scene_geometry,,);
+rtDeclareVariable(rtObject, scene_geometry, , );
 
 // Pinhole camera variables
 rtDeclareVariable(float3, eye, , );
@@ -120,6 +115,7 @@ RT_PROGRAM void trace_ray()
 	beta_buffer[launch_index] = prd.beta;
 	depth_buffer[launch_index] = prd.depth;
 	projected_distances_buffer[launch_index] = prd.projected_distance;
+	object_id_buffer[launch_index] = prd.object_id;
 }
 
 //-----------------------------------------------------------------------------
@@ -133,6 +129,7 @@ rtDeclareVariable(float, phong_exp, , );
 rtDeclareVariable(float3, Kd, , );
 rtDeclareVariable(float3, ambient_light_color, , );
 rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
+rtDeclareVariable(uint, object_id, , );
 
 #define FLT_MAX 3.402823466e+38F
 
@@ -279,6 +276,7 @@ RT_PROGRAM void diffuse()
 	}
 	prd_diffuse.color = color;
 	prd_diffuse.depth = length(hit_point - ray.origin);
+	prd_diffuse.object_id = float(object_id);
 }
 
 //-----------------------------------------------------------------------------
@@ -302,6 +300,7 @@ RT_PROGRAM void miss()
 {
 	prd_diffuse.color = bg_color;
 	prd_diffuse.depth = 0.f;
+	prd_diffuse.object_id = 0.f;
 }
 
 //--------------------------------------------------------------
@@ -314,4 +313,5 @@ RT_PROGRAM void exception()
 {
 	diffuse_buffer[launch_index] = make_float4(bad_color, 1.f);
 	beta_buffer[launch_index] = 0.f;
+	object_id_buffer[launch_index] = 0.f;
 }

@@ -109,6 +109,7 @@ enum State
 	DEFAULT,
 	SHOW_DIFFUSE,
 	SHOW_DEPTH,
+	SHOW_OBJECT_IDS,
 	SHOW_H_BLUR,
 	SHOW_V_BLUR,
 	SHOW_BETA,
@@ -119,8 +120,14 @@ State state = DEFAULT;
 bool animateLight = true;
 
 ParallelogramLight light;
-Buffer light_buffer;
-Buffer diffuseBuffer, depthBuffer, projectedDistancesBuffer, betaBuffer, blurHBuffer, blurVBuffer;
+Buffer lightBuffer;
+Buffer diffuseBuffer;
+Buffer depthBuffer;
+Buffer objectIdBuffer;
+Buffer projectedDistancesBuffer;
+Buffer betaBuffer;
+Buffer blurHBuffer;
+Buffer blurVBuffer;
 
 //--------------------------------------------------------------
 // Render loop
@@ -184,14 +191,14 @@ void normalizeAndDisplayBuffer(Buffer buffer)
 void glutDisplay()
 {
 	updateCamera();
-
-	if(animateLight) {
+	if(animateLight)
+	{
 		light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
 								   548.6f,
 								   227.0f + sin(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f);
-		memcpy(light_buffer->map(), &light, sizeof(light));
-		light_buffer->unmap();
-		context["lights"]->setBuffer(light_buffer);
+		memcpy(lightBuffer->map(), &light, sizeof(light));
+		lightBuffer->unmap();
+		context["lights"]->setBuffer(lightBuffer);
 	}
 
 	// Render diffuse image
@@ -219,6 +226,12 @@ void glutDisplay()
 		case SHOW_DEPTH:
 		{
 			normalizeAndDisplayBuffer(context["depth_buffer"]->getBuffer());
+		}
+		break;
+
+		case SHOW_OBJECT_IDS:
+		{
+			normalizeAndDisplayBuffer(context["object_id_buffer"]->getBuffer());
 		}
 		break;
 
@@ -262,7 +275,7 @@ void glutDisplay()
 		}
 		break;
 
-		case SHOW_NUM_SAMPLES:
+		/*case SHOW_NUM_SAMPLES:
 		{
 			// Normalize and display the adaptive sampling buffer
 			float minValue, maxValue, avg;
@@ -277,19 +290,24 @@ void glutDisplay()
 			msg << "Max samples: " << maxValue;
 			sutil::displayText(msg.str().c_str(), width - 200, height - 35);
 		}
-		break;
+		break;*/
+
+		default:
+			sutil::displayBufferGL(context["diffuse_buffer"]->getBuffer());
+			break;
 	}
 
 	std::string stateName = "MISSING";
 	switch(state)
 	{
-	case DEFAULT: stateName = "SoftShadows"; break;
-	case SHOW_DIFFUSE: stateName = "Diffuse"; break;
-	case SHOW_DEPTH: stateName = "Depth"; break;
-	case SHOW_H_BLUR: stateName = "Blur H"; break;
-	case SHOW_V_BLUR: stateName = "Blur V"; break;
-	case SHOW_BETA: stateName = "Beta"; break;
-	case SHOW_NUM_SAMPLES: stateName = "Num Samples"; break;
+		case DEFAULT: stateName = "SoftShadows"; break;
+		case SHOW_DIFFUSE: stateName = "Diffuse"; break;
+		case SHOW_DEPTH: stateName = "Depth"; break;
+		case SHOW_OBJECT_IDS: stateName = "Object IDs"; break;
+		case SHOW_H_BLUR: stateName = "Blur H"; break;
+		case SHOW_V_BLUR: stateName = "Blur V"; break;
+		case SHOW_BETA: stateName = "Beta"; break;
+		case SHOW_NUM_SAMPLES: stateName = "Num Samples"; break;
 	}
 
 	// Display world info
@@ -330,6 +348,8 @@ void setMaterial(
 	gi[color_name]->setFloat(color);
 }
 
+uint objectID = 0;
+
 GeometryInstance createParallelogram(
 	const float3& anchor,
 	const float3& offset1,
@@ -357,6 +377,7 @@ GeometryInstance createParallelogram(
 
 	GeometryInstance gi = context->createGeometryInstance();
 	gi->setGeometry(parallelogram);
+	gi["object_id"]->setUint(++objectID);
 	return gi;
 }
 
@@ -369,13 +390,13 @@ void createScene()
 	light.normal = normalize(cross(light.v1, light.v2));
 	light.emission = make_float3(15.0f, 15.0f, 5.0f);
 
-	light_buffer = context->createBuffer(RT_BUFFER_INPUT);
-	light_buffer->setFormat(RT_FORMAT_USER);
-	light_buffer->setElementSize(sizeof(ParallelogramLight));
-	light_buffer->setSize(1u);
-	memcpy(light_buffer->map(), &light, sizeof(light));
-	light_buffer->unmap();
-	context["lights"]->setBuffer(light_buffer);
+	lightBuffer = context->createBuffer(RT_BUFFER_INPUT);
+	lightBuffer->setFormat(RT_FORMAT_USER);
+	lightBuffer->setElementSize(sizeof(ParallelogramLight));
+	lightBuffer->setSize(1u);
+	memcpy(lightBuffer->map(), &light, sizeof(light));
+	lightBuffer->unmap();
+	context["lights"]->setBuffer(lightBuffer);
 
 	// Material
 	Material diffuse = context->createMaterial();
@@ -609,6 +630,7 @@ int main(int argc, char* argv[])
 		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 		depthBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 		projectedDistancesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT2, width, height, true);
+		objectIdBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT/*UNSIGNED_INT*/, width, height, false);
 		betaBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 		blurHBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 		blurVBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
@@ -618,6 +640,7 @@ int main(int argc, char* argv[])
 		context["diffuse_buffer"]->set(diffuseBuffer);
 		context["beta_buffer"]->set(betaBuffer);
 		context["depth_buffer"]->set(depthBuffer);
+		context["object_id_buffer"]->set(objectIdBuffer);
 		context["projected_distances_buffer"]->set(projectedDistancesBuffer);
 
 		// Exception program

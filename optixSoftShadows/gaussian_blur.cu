@@ -8,7 +8,8 @@ using namespace optix;
 
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 rtBuffer<float4, 2> diffuse_buffer;
-rtBuffer<float, 2> beta_buffer;
+rtBuffer<float,  2> beta_buffer;
+rtBuffer<float,  2> object_id_buffer;
 rtBuffer<float2, 2> projected_distances_buffer;
 rtBuffer<float4, 2> blur_h_buffer;
 rtBuffer<float4, 2> blur_v_buffer;
@@ -30,19 +31,21 @@ RT_PROGRAM void blurH()
 		return;
 	}
 
+	uint object_id = uint(object_id_buffer[launch_index]);
 	float3 color = make_float3(0.f);
 	float sum = 0.f;
 	for(int i = -kernel_size; i <= kernel_size; i++)
 	{
-		const uint x = launch_index.x + i;
-		if(x >= screen.x) continue; // Explointing interger underflow for x < 0
+		// Explointing interger underflow for when pos.x < 0
+		const uint2 pos = make_uint2(launch_index.x + i, launch_index.y);
+		if(pos.x >= screen.x || object_id != object_id_buffer[pos]) continue;
 
 		float2 center = projected_distances_buffer[launch_index];
-		float2 p = projected_distances_buffer[make_uint2(x, launch_index.y)];
+		float2 p = projected_distances_buffer[pos];
 		const float offset = length(center - p);
 
-		const float w = gauss1D(offset/300.f, beta);
-		color += make_float3(diffuse_buffer[make_uint2(x, launch_index.y)]) * w;
+		const float w = gauss1D(offset/300.0f, beta);
+		color += make_float3(diffuse_buffer[pos]) * w;
 		sum += w;
 	}
 
@@ -60,14 +63,20 @@ RT_PROGRAM void blurV()
 		return;
 	}
 
+	uint object_id = uint(object_id_buffer[launch_index]);
 	float3 color = make_float3(0.f);
 	float sum = 0.f;
 	for(int i = -kernel_size; i <= kernel_size; i++)
 	{
-		const uint y = launch_index.y + i;
-		if(y >= screen.y) continue;
-		const float w = gauss1D(i, beta);
-		color += make_float3(blur_h_buffer[make_uint2(launch_index.x, y)]) * w;
+		const uint2 pos = make_uint2(launch_index.x, launch_index.y + i);
+		if(pos.y >= screen.y || object_id != object_id_buffer[pos]) continue;
+
+		float2 center = projected_distances_buffer[launch_index];
+		float2 p = projected_distances_buffer[pos];
+		const float offset = length(center - p);
+
+		const float w = gauss1D(offset / 300.0f, beta);
+		color += make_float3(blur_h_buffer[pos]) * w;
 		sum += w;
 	}
 
