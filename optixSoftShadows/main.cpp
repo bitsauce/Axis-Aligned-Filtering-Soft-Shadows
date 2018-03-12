@@ -103,7 +103,7 @@ enum
 	NORMALIZE_PROGRAM
 };
 
-// Debug visualization
+// Debug visualization state
 enum State
 {
 	DEFAULT,
@@ -116,9 +116,14 @@ enum State
 	SHOW_NUM_SAMPLES,
 	NUM_STATES
 };
+
+// State varaibles
 State state = DEFAULT;
 bool animateLight = true;
+bool showMenus = true;
+bool generateDisparityMap = false;
 
+// CUDA buffers
 ParallelogramLight light;
 Buffer lightBuffer;
 Buffer diffuseBuffer;
@@ -159,6 +164,17 @@ void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue, float &avg
 	avg = std::accumulate(values.begin(), values.end(), 0.0f) / values.size();
 }
 
+void drawStrings(std::vector<std::string> strings, int x, int y, int dx, int dy)
+{
+	if(!showMenus) return;
+	for(int i = 0; i < strings.size(); i++)
+	{
+		sutil::displayText(strings[i].c_str(), x, y);
+		x += dx;
+		y += dy;
+	}
+}
+
 void normalizeAndDisplayBuffer(Buffer buffer)
 {
 	// Normalize and display the beta buffer
@@ -169,23 +185,11 @@ void normalizeAndDisplayBuffer(Buffer buffer)
 	context->launch(NORMALIZE_PROGRAM, width, height);
 	sutil::displayBufferGL(buffer);
 
-	{
-		std::stringstream msg;
-		msg << "Min: " << minValue;
-		sutil::displayText(msg.str().c_str(), width - 200, height - 35);
-	}
-
-	{
-		std::stringstream msg;
-		msg << "Max: " << maxValue;
-		sutil::displayText(msg.str().c_str(), width - 200, height - 55);
-	}
-
-	{
-		std::stringstream msg;
-		msg << "Avg: " << avgValue;
-		sutil::displayText(msg.str().c_str(), width - 200, height - 75);
-	}
+	std::vector<std::string> strings;
+	strings.push_back("Min: " + std::to_string(minValue));
+	strings.push_back("Max: " + std::to_string(maxValue));
+	strings.push_back("Avg: " + std::to_string(avgValue));
+	drawStrings(strings, width - 150, 55, 0, -20);
 }
 
 void glutDisplay()
@@ -252,26 +256,7 @@ void glutDisplay()
 
 		case SHOW_BETA:
 		{
-			// Normalize and display the beta buffer
-			float minValue, maxValue, avg;
-			Buffer buffer = context["beta_buffer"]->getBuffer();
-			getBufferMinMax(buffer, minValue, maxValue, avg);
-			context["max_value"]->setFloat(maxValue);
-			context["normalize_buffer"]->set(buffer);
-			context->launch(NORMALIZE_PROGRAM, width, height);
-			sutil::displayBufferGL(buffer);
-
-			{
-				std::stringstream msg;
-				msg << "Max beta: " << maxValue;
-				sutil::displayText(msg.str().c_str(), width - 200, height - 35);
-			}
-
-			{
-				std::stringstream msg;
-				msg << "Avg beta: " << avg;
-				sutil::displayText(msg.str().c_str(), width - 200, height - 55);
-			}
+			normalizeAndDisplayBuffer(context["beta_buffer"]->getBuffer());
 		}
 		break;
 
@@ -313,24 +298,23 @@ void glutDisplay()
 	// Display world info
 	static unsigned frame_count = 0;
 	sutil::displayFps(frame_count++);
-	sutil::displayText(stateName.c_str(), 10, height - 15);
-	{
-		std::stringstream msg;
-		msg << "Yaw: " << camera.yaw;
-		sutil::displayText(msg.str().c_str(), 10, height - 35);
-	}
 
-	{
-		std::stringstream msg;
-		msg << "Pitch: " << camera.pitch;
-		sutil::displayText(msg.str().c_str(), 10, height - 55);
-	}
+	std::vector<std::string> topLeftInfo;
+	topLeftInfo.push_back(stateName);
+	topLeftInfo.push_back("Yaw: " + std::to_string(camera.yaw));
+	topLeftInfo.push_back("Pitch: " + std::to_string(camera.pitch));
+	topLeftInfo.push_back("Position: [" + std::to_string(camera.position.x) + ", " + std::to_string(camera.position.y) + ", " + std::to_string(camera.position.z) + "]");
+	drawStrings(topLeftInfo, 10, height - 15, 0, -20);
 
-	{
-		std::stringstream msg;
-		msg << "Position: " << camera.position;
-		sutil::displayText(msg.str().c_str(), 10, height - 75);
-	}
+	std::vector<std::string> topRightInfo;
+	topRightInfo.push_back("WASD: Move");
+	topRightInfo.push_back("QE: Up/Down");
+	topRightInfo.push_back("P: Pause Animations");
+	topRightInfo.push_back("M: Toggle Menus");
+	topRightInfo.push_back("O: Generate Disparity Map");
+	topRightInfo.push_back("1/2: Next/Prev State");
+	drawStrings(topRightInfo, width - 200, height - 15, 0, -20);
+
 	glutSwapBuffers();
 }
 
@@ -595,6 +579,8 @@ void glutKeyboardUp(unsigned char k, int, int)
 	case 'q': actionState[MOVE_UP] = false; break;
 	case 'e': actionState[MOVE_DOWN] = false; break;
 	case 'p': animateLight = !animateLight; break;
+	case 'm': showMenus = !showMenus; break;
+	case 'o': generateDisparityMap = true; break;
 	case '2': state = State((state + 1) % NUM_STATES); break;
 	case '1': state = State((state - 1 + NUM_STATES) % NUM_STATES); break;
 	}
