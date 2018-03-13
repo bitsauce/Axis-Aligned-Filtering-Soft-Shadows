@@ -14,17 +14,11 @@ rtBuffer<float2, 2> projected_distances_buffer;
 rtBuffer<float4, 2> blur_h_buffer;
 rtBuffer<float4, 2> blur_v_buffer;
 
-
-//rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
-
 float gauss1D(const float x, const float std)
 {
 	const float sqrt_2_pi = sqrtf(2.f * M_PIf);
 	return expf(-(x * x) / (2.f * std * std)) / (sqrt_2_pi * std);
 }
-
-const float offset_factor = 0.0f;
-const float max_kernel_size = 200.f;
 
 RT_PROGRAM void blurH()
 {
@@ -32,7 +26,7 @@ RT_PROGRAM void blurH()
 	const float beta = beta_buffer[launch_index];
 
 	// TODO: Experiment with different kernel_sizes -- kernel as a function of beta?
-	const int kernel_size = 10.f;//max_kernel_size * beta / 16.0f; 
+	const int kernel_size = 10.f;
 
 	if(beta == 0.f) {
 		blur_h_buffer[launch_index] = make_float4(make_float3(diffuse_buffer[launch_index]), 1.f);
@@ -47,11 +41,10 @@ RT_PROGRAM void blurH()
 		// Explointing interger underflow when pos.x < 0
 		const uint2 pos = make_uint2(launch_index.x + i, launch_index.y);
 		if(pos.x >= screen.x || object_id != object_id_buffer[pos]) continue;
-		//if(pos.x >= screen.x) continue;
 
-		float2 center = projected_distances_buffer[launch_index];
+		/*float2 center = projected_distances_buffer[launch_index];
 		float2 p = projected_distances_buffer[pos];
-		const float offset = length(center - p) * offset_factor;
+		const float offset = length(center - p);*/
 
 		const float w = gauss1D(i, beta);
 		color += make_float3(diffuse_buffer[pos]) * w;
@@ -65,7 +58,7 @@ RT_PROGRAM void blurV()
 {
 	size_t2 screen = diffuse_buffer.size();
 	const float beta = beta_buffer[launch_index];
-	const int kernel_size = 10.f;// max_kernel_size * beta / 16.0f;
+	const int kernel_size = 10.f;
 
 	if(beta == 0.f) {
 		blur_v_buffer[launch_index] = make_float4(make_float3(diffuse_buffer[launch_index]), 1.f);
@@ -79,11 +72,10 @@ RT_PROGRAM void blurV()
 	{
 		const uint2 pos = make_uint2(launch_index.x, launch_index.y + i);
 		if(pos.y >= screen.y || object_id != object_id_buffer[pos]) continue;
-		//if(pos.y >= screen.y) continue;
 
-		float2 center = projected_distances_buffer[launch_index];
+		/*float2 center = projected_distances_buffer[launch_index];
 		float2 p = projected_distances_buffer[pos];
-		const float offset = length(center - p) * offset_factor;
+		const float offset = length(center - p) * offset_factor;*/
 
 		const float w = gauss1D(i, beta);
 		color += make_float3(blur_h_buffer[pos]) * w;
