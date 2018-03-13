@@ -46,7 +46,7 @@ struct PerRayData_diffuse
 	float2       projected_distance;
 	float        object_id;
 	float        beta;			// Filter width (screen-space standard deviation)
-	unsigned int num_samples;	// Number of adaptive samples
+	float		 num_samples;	// Number of adaptive samples
 	unsigned int seed;          // Seed for random sampling
 };
 
@@ -67,6 +67,7 @@ rtBuffer<float4, 2> diffuse_buffer;             // Diffuse color buffer
 rtBuffer<float,  2> beta_buffer;                // Beta buffer (gaussian standard deviation)
 rtBuffer<float,  2> depth_buffer;               // Depth buffer
 rtBuffer<float,  2> object_id_buffer;           // Object id buffer
+rtBuffer<float,  2> num_samples_buffer;           // Sample number buffer
 rtBuffer<float2, 2> projected_distances_buffer; // Projected distances buffer (offset of screen-space gaussian)
 
 // Scene geometry objects
@@ -116,6 +117,7 @@ RT_PROGRAM void trace_ray()
 	depth_buffer[launch_index] = prd.depth;
 	projected_distances_buffer[launch_index] = prd.projected_distance;
 	object_id_buffer[launch_index] = prd.object_id;
+	num_samples_buffer[launch_index] = prd.num_samples;
 }
 
 //-----------------------------------------------------------------------------
@@ -132,6 +134,47 @@ rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
 rtDeclareVariable(uint, object_id, , );
 
 #define FLT_MAX 3.402823466e+38F
+
+RT_PROGRAM void sample_distances(unsigned int& seed, ParallelogramLight light, float3 ffnormal, float3 hit_point, float& d2_min, float& d2_max)
+{
+	// Choose random point on light
+	const float z1 = rnd(seed);
+	const float z2 = rnd(seed);
+	const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
+
+	float3 L = normalize(light_pos - hit_point);
+	float nDl = dot(ffnormal, L);
+	//if(nDl > 0.0f) // Check if light is behind
+	{
+		// TODO: Maybe d1 should be average of these?
+		float Ldist = length(light_pos - hit_point);
+
+		// Cast shadow ray
+		PerRayData_shadow shadow_prd;
+		shadow_prd.attenuation = make_float3(1.0f);
+
+		Ray shadow_ray(hit_point, L, SHADOW_RAY, EPSILON, Ldist);
+		rtTrace(scene_geometry, shadow_ray, shadow_prd);
+
+		float3 light_attenuation = shadow_prd.attenuation;
+		if (fmaxf(light_attenuation) <= 0.0f) // If light source was occluded
+		{
+			const float d2 = length(shadow_prd.hit_point - light_pos);
+
+			// Store min d2
+			if (d2 < d2_min)
+			{
+				d2_min = d2;
+			}
+
+			// Store max d2
+			if (d2 > d2_max)
+			{
+				d2_max = d2;
+			}
+		}
+	}
+}
 
 RT_PROGRAM void diffuse()
 {
@@ -193,43 +236,7 @@ RT_PROGRAM void diffuse()
 		float d1 = length(hit_point - light_center); // Distance from light to receiver
 		for(int j = 0; j < 9; j++)
 		{
-			// Choose random point on light
-			const float z1 = rnd(seed);
-			const float z2 = rnd(seed);
-			const float3 light_pos = light.corner + light.v1 * z1 + light.v2 * z2;
-
-			float3 L = normalize(light_pos - hit_point);
-			float nDl = dot(ffnormal, L);
-			//if(nDl > 0.0f) // Check if light is behind
-			{
-				// TODO: Maybe d1 should be average of these?
-				float Ldist = length(light_pos - hit_point);
-
-				// Cast shadow ray
-				PerRayData_shadow shadow_prd;
-				shadow_prd.attenuation = make_float3(1.0f);
-
-				Ray shadow_ray(hit_point, L, SHADOW_RAY, EPSILON, Ldist);
-				rtTrace(scene_geometry, shadow_ray, shadow_prd);
-
-				float3 light_attenuation = shadow_prd.attenuation;
-				if(fmaxf(light_attenuation) <= 0.0f) // If light source was occluded
-				{
-					const float d2 = length(shadow_prd.hit_point - light_pos);
-
-					// Store min d2
-					if(d2 < d2_min)
-					{
-						d2_min = d2;
-					}
-
-					// Store max d2
-					if(d2 > d2_max)
-					{
-						d2_max = d2;
-					}
-				}
-			}
+			sample_distances(seed, light, ffnormal, hit_point, d2_min, d2_max);
 		}
 
 		// DEBUG: Show the light
@@ -242,6 +249,7 @@ RT_PROGRAM void diffuse()
 		const float k = 3.f;
 		const float alpha = 1.f;
 		const float mu = 2.f;
+		const float max_num_samples = 50.f;
 
 		// Standard deviation of Gaussian of the light
 		// TODO: Experiment with different sigmas
@@ -271,8 +279,13 @@ RT_PROGRAM void diffuse()
 		const float Al = 4.f * sigma * sigma;
 
 		// Calcuate number of additional samples
-		const float num_samples = 4 * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + inv_s2, 2.f);
+		const float num_samples = 50.0f; // min(mu * 2 / s2 * sqrtf(Ap / Al), max_num_samples); //min(4.f * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + inv_s2, 2.f), max_num_samples);
 		prd_diffuse.num_samples = num_samples;
+
+		for (int j = 0; j < (int)num_samples; j++)
+		{
+			sample_distances(seed, light, ffnormal, hit_point, d2_min, d2_max);
+		}
 	}
 	prd_diffuse.color = color;
 	prd_diffuse.depth = length(hit_point - ray.origin);
@@ -301,6 +314,7 @@ RT_PROGRAM void miss()
 	prd_diffuse.color = bg_color;
 	prd_diffuse.depth = 0.f;
 	prd_diffuse.object_id = 0.f;
+	prd_diffuse.num_samples = 0.f;
 }
 
 //--------------------------------------------------------------
@@ -314,4 +328,5 @@ RT_PROGRAM void exception()
 	diffuse_buffer[launch_index] = make_float4(bad_color, 1.f);
 	beta_buffer[launch_index] = 0.f;
 	object_id_buffer[launch_index] = 0.f;
+	num_samples_buffer[launch_index] = 0.f;
 }

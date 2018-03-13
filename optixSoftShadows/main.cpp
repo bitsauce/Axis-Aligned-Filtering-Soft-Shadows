@@ -133,6 +133,7 @@ Buffer projectedDistancesBuffer;
 Buffer betaBuffer;
 Buffer blurHBuffer;
 Buffer blurVBuffer;
+Buffer numSamplesBuffer;
 
 //--------------------------------------------------------------
 // Render loop
@@ -260,22 +261,11 @@ void glutDisplay()
 		}
 		break;
 
-		/*case SHOW_NUM_SAMPLES:
+		case SHOW_NUM_SAMPLES:
 		{
-			// Normalize and display the adaptive sampling buffer
-			float minValue, maxValue, avg;
-			Buffer buffer = context["num_samples_buffer"]->getBuffer();
-			getBufferMinMax(buffer, minValue, maxValue, avg);
-			context["max_value"]->setFloat(maxValue);
-			context["normalize_buffer"]->set(buffer);
-			context->launch(NORMALIZE_PROGRAM, width, height);
-			sutil::displayBufferGL(buffer);
-
-			std::stringstream msg;
-			msg << "Max samples: " << maxValue;
-			sutil::displayText(msg.str().c_str(), width - 200, height - 35);
+			normalizeAndDisplayBuffer(context["num_samples_buffer"]->getBuffer());
 		}
-		break;*/
+		break;
 
 		default:
 			sutil::displayBufferGL(context["diffuse_buffer"]->getBuffer());
@@ -620,6 +610,7 @@ int main(int argc, char* argv[])
 		betaBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 		blurHBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 		blurVBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		numSamplesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 
 		// Set ray generation program
 		context->setRayGenerationProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "trace_ray"));
@@ -628,6 +619,7 @@ int main(int argc, char* argv[])
 		context["depth_buffer"]->set(depthBuffer);
 		context["object_id_buffer"]->set(objectIdBuffer);
 		context["projected_distances_buffer"]->set(projectedDistancesBuffer);
+		context["num_samples_buffer"]->set(numSamplesBuffer);
 
 		// Exception program
 		context->setExceptionProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "exception"));
