@@ -40,5 +40,11 @@
     <None Include="normalize.cu">
       <Filter>CUDA Files</Filter>
     </None>
+    <None Include="ground_truth.cu">
+      <Filter>CUDA Files</Filter>
+    </None>
+    <None Include="calculate_disparity.cu">
+      <Filter>CUDA Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

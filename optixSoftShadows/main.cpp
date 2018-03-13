@@ -63,7 +63,7 @@ void destroyContext();
 // OptiX context
 Context context = 0;
 const int width = 1280, height = 720;
-const char *mainPTX, *blurPTX, *parallelogramPTX, *normalizePTX;
+const char *mainPTX, *groundTruthPTX, *blurPTX, *parallelogramPTX, *normalizePTX, *calculateDisparityPTX;
 
 // Camera
 struct
@@ -100,7 +100,10 @@ enum
 	DIFFUSE_PROGRAM,
 	BLUR_H_PROGRAM,
 	BLUR_V_PROGRAM,
-	NORMALIZE_PROGRAM
+	NORMALIZE_PROGRAM,
+	GROUND_TRUTH_PROGRAM,
+	DISPARITY_PROGRAM,
+	NUM_PROGRAMS
 };
 
 // Debug visualization state
@@ -127,6 +130,7 @@ bool generateDisparityMap = false;
 ParallelogramLight light;
 Buffer lightBuffer;
 Buffer diffuseBuffer;
+Buffer disparityBuffer;
 Buffer depthBuffer;
 Buffer objectIdBuffer;
 Buffer projectedDistancesBuffer;
@@ -193,17 +197,34 @@ void normalizeAndDisplayBuffer(Buffer buffer)
 	drawStrings(strings, width - 150, 55, 0, -20);
 }
 
+#include <stdio.h>
+#include <time.h>
+
+#define LOGNAME_FORMAT "[%Y-%m-%d] [%H-%M-%S]"
+#define LOGNAME_SIZE 24
+
+std::string getTimeStamp()
+{
+	static char name[LOGNAME_SIZE];
+	time_t now = time(0);
+	strftime(name, sizeof(name), LOGNAME_FORMAT, localtime(&now));
+	return name;
+}
+
 void glutDisplay()
 {
+
 	updateCamera();
 	if(animateLight)
 	{
 		light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
-								   548.6f,
+								   520.0f,
 								   227.0f + sin(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f);
 		memcpy(lightBuffer->map(), &light, sizeof(light));
 		lightBuffer->unmap();
 		context["lights"]->setBuffer(lightBuffer);
+
+		//context["filter_window"] =  ;
 	}
 
 	// Render diffuse image
@@ -211,7 +232,7 @@ void glutDisplay()
 
 	context["blur_h_buffer"]->set(diffuseBuffer);
 
-	switch(state)
+	switch(generateDisparityMap ? DEFAULT : state)
 	{
 		case DEFAULT:
 		{
@@ -270,6 +291,25 @@ void glutDisplay()
 		default:
 			sutil::displayBufferGL(context["diffuse_buffer"]->getBuffer());
 			break;
+	}
+
+	if(generateDisparityMap)
+	{
+		// Render ground truth image
+		context->launch(GROUND_TRUTH_PROGRAM, width, height);
+		
+		// Calculate disparities between ground truth and
+		// filtered image
+		context->launch(DISPARITY_PROGRAM, width, height);
+
+		// Save all three images
+		std::string timeStamp = getTimeStamp();
+		sutil::displayBufferPPM(("output_images/" + timeStamp + " filtered.ppm").c_str(), context["blur_v_buffer"]->getBuffer());
+		sutil::displayBufferPPM(("output_images/" + timeStamp + " ground_truth.ppm").c_str(), context["diffuse_buffer"]->getBuffer());
+		sutil::displayBufferPPM(("output_images/" + timeStamp + " disparity_map.ppm").c_str(), context["disparity_buffer"]->getBuffer());
+
+		// Toggle disparity map generation
+		generateDisparityMap = false;
 	}
 
 	std::string stateName = "MISSING";
@@ -358,7 +398,7 @@ GeometryInstance createParallelogram(
 void createScene()
 {
 	// Setup light
-	light.corner = make_float3(343.0f, 548.6f, 227.0f);
+	light.corner = make_float3(343.0f, 520.0f, 227.0f);
 	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
 	light.v2 = make_float3(0.0f, 0.0f, 130.0f);
 	light.normal = normalize(cross(light.v1, light.v2));
@@ -375,6 +415,7 @@ void createScene()
 	// Material
 	Material diffuse = context->createMaterial();
 	diffuse->setClosestHitProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "diffuse"));
+	diffuse->setClosestHitProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(groundTruthPTX, "diffuse"));
 	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(mainPTX, "shadow"));
 
 	diffuse["Ka"]->setFloat(0.3f, 0.3f, 0.3f);
@@ -593,17 +634,20 @@ int main(int argc, char* argv[])
 
 		// Create optix context
 		context = Context::create();
-		context->setRayTypeCount(2);
-		context->setEntryPointCount(4);
+		context->setRayTypeCount(NUM_RAYS);
+		context->setEntryPointCount(NUM_PROGRAMS);
 
 		// Load CUDA programs
 		mainPTX = loadCudaFile("main.cu");
+		groundTruthPTX = loadCudaFile("ground_truth.cu");
 		blurPTX = loadCudaFile("gaussian_blur.cu");
 		parallelogramPTX = loadCudaFile("parallelogram.cu");
 		normalizePTX = loadCudaFile("normalize.cu");
+		calculateDisparityPTX = loadCudaFile("calculate_disparity.cu");
 
 		// Create output buffer
 		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		disparityBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 		depthBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 		projectedDistancesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT2, width, height, true);
 		objectIdBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT/*UNSIGNED_INT*/, width, height, false);
@@ -629,6 +673,11 @@ int main(int argc, char* argv[])
 		context->setMissProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "miss"));
 		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
 
+		// Set ray generation program
+		context->setRayGenerationProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(groundTruthPTX, "trace_ray"));
+		context->setExceptionProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(groundTruthPTX, "exception"));
+		context->setMissProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(groundTruthPTX, "miss"));
+
 		// Set blur program
 		context->setRayGenerationProgram(BLUR_H_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurH"));
 		context->setRayGenerationProgram(BLUR_V_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurV"));
@@ -638,6 +687,12 @@ int main(int argc, char* argv[])
 		// Set normalize program
 		context->setRayGenerationProgram(NORMALIZE_PROGRAM, context->createProgramFromPTXString(normalizePTX, "normalize"));
 		context["normalize_buffer"]->set(betaBuffer);
+
+		// Set normalize program
+		context->setRayGenerationProgram(DISPARITY_PROGRAM, context->createProgramFromPTXString(calculateDisparityPTX, "calculate_disparity"));
+		context["disparity_buffer"]->set(disparityBuffer);
+		context["input_buffer_0"]->set(blurVBuffer);
+		context["input_buffer_1"]->set(diffuseBuffer);
 
 		// Setup scene and camera
 		createScene();
