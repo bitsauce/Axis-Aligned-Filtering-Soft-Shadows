@@ -33,7 +33,7 @@
 
 using namespace optix;
 
-#define EPSILON  1.e-3f
+#define EPSILON  1.e-1f
 #define NUM_SAMPLES 4000
 
 //--------------------------------------------------------------

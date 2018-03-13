@@ -98,6 +98,7 @@ bool actionState[ACTION_COUNT];
 enum
 {
 	DIFFUSE_PROGRAM,
+	GEOMETRY_HIT_PROGRAM,
 	BLUR_H_PROGRAM,
 	BLUR_V_PROGRAM,
 	NORMALIZE_PROGRAM,
@@ -130,6 +131,7 @@ bool generateDisparityMap = false;
 ParallelogramLight light;
 Buffer lightBuffer;
 Buffer diffuseBuffer;
+Buffer geometryHitBuffer;
 Buffer disparityBuffer;
 Buffer depthBuffer;
 Buffer objectIdBuffer;
@@ -213,7 +215,6 @@ std::string getTimeStamp()
 
 void glutDisplay()
 {
-
 	updateCamera();
 	if(animateLight)
 	{
@@ -226,6 +227,9 @@ void glutDisplay()
 
 		//context["filter_window"] =  ;
 	}
+
+	// Sample geometry hits
+	context->launch(GEOMETRY_HIT_PROGRAM, width, height);
 
 	// Render diffuse image
 	context->launch(DIFFUSE_PROGRAM, width, height);
@@ -416,6 +420,7 @@ void createScene()
 	Material diffuse = context->createMaterial();
 	diffuse->setClosestHitProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "diffuse"));
 	diffuse->setClosestHitProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(groundTruthPTX, "diffuse"));
+	diffuse->setClosestHitProgram(GEOMETRY_HIT_RAY, context->createProgramFromPTXString(mainPTX, "sample_geometry_hit"));
 	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(mainPTX, "shadow"));
 
 	diffuse["Ka"]->setFloat(0.3f, 0.3f, 0.3f);
@@ -648,6 +653,7 @@ int main(int argc, char* argv[])
 		// Create output buffer
 		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
 		disparityBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		geometryHitBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		depthBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 		projectedDistancesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT2, width, height, true);
 		objectIdBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT/*UNSIGNED_INT*/, width, height, false);
@@ -672,6 +678,10 @@ int main(int argc, char* argv[])
 		// Miss program
 		context->setMissProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "miss"));
 		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
+
+
+		context->setRayGenerationProgram(GEOMETRY_HIT_PROGRAM, context->createProgramFromPTXString(mainPTX, "trace_geometry_hit"));
+		context["geometry_hit_buffer"]->setBuffer(geometryHitBuffer);
 
 		// Set ray generation program
 		context->setRayGenerationProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(groundTruthPTX, "trace_ray"));

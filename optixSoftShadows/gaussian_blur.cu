@@ -47,12 +47,13 @@ RT_PROGRAM void blurH()
 		// Explointing interger underflow when pos.x < 0
 		const uint2 pos = make_uint2(launch_index.x + i, launch_index.y);
 		if(pos.x >= screen.x || object_id != object_id_buffer[pos]) continue;
+		//if(pos.x >= screen.x) continue;
 
 		float2 center = projected_distances_buffer[launch_index];
 		float2 p = projected_distances_buffer[pos];
 		const float offset = length(center - p) * offset_factor;
 
-		const float w = gauss1D(offset, beta);
+		const float w = gauss1D(i, beta);
 		color += make_float3(diffuse_buffer[pos]) * w;
 		sum += w;
 	}
@@ -78,12 +79,13 @@ RT_PROGRAM void blurV()
 	{
 		const uint2 pos = make_uint2(launch_index.x, launch_index.y + i);
 		if(pos.y >= screen.y || object_id != object_id_buffer[pos]) continue;
+		//if(pos.y >= screen.y) continue;
 
 		float2 center = projected_distances_buffer[launch_index];
 		float2 p = projected_distances_buffer[pos];
 		const float offset = length(center - p) * offset_factor;
 
-		const float w = gauss1D(offset, beta);
+		const float w = gauss1D(i, beta);
 		color += make_float3(blur_h_buffer[pos]) * w;
 		sum += w;
 	}

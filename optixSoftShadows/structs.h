@@ -7,6 +7,7 @@ using namespace optix;
 enum RayTypes
 {
 	DIFFUSE_RAY,
+	GEOMETRY_HIT_RAY,
 	SHADOW_RAY,
 	GROUND_TRUTH_RAY,
 	NUM_RAYS
@@ -37,12 +38,17 @@ struct ParallelogramLight
 struct PerRayData_diffuse
 {
 	float3       color;         // Diffuse color
-	float        depth;			// Sample depth
 	float2       projected_distance;
 	float        object_id;
 	float        beta;			// Filter width (screen-space standard deviation)
-	unsigned int num_samples;	// Number of adaptive samples
+	float        num_samples;	// Number of adaptive samples
 	unsigned int seed;          // Seed for random sampling
+};
+
+struct PerRayData_geometry_hit
+{
+	float3       geometry_hit;
+	float        depth;
 };
 
 struct PerRayData_ground_truth
