@@ -33,7 +33,7 @@
 
 using namespace optix;
 
-#define EPSILON  1.e-3f
+#define EPSILON  1.e-1f
 
 //--------------------------------------------------------------
 // Variable declarations
@@ -135,28 +135,6 @@ RT_PROGRAM void diffuse()
 		float3 p_projected = projection_matrix * hit_point;
 		prd_diffuse.projected_distance = make_float2(p_projected);
 
-
-		// Sample color
-		float3 L = normalize(light_center - hit_point);
-		float nDl = dot(ffnormal, L);
-		if(nDl > 0.0f) // Check if light is behind
-		{
-			float Ldist = length(light_center - hit_point);
-
-			// Cast shadow ray
-			PerRayData_shadow shadow_prd;
-			shadow_prd.hit = false;
-
-			Ray shadow_ray(hit_point, L, SHADOW_RAY, EPSILON, Ldist);
-			rtTrace(scene_geometry, shadow_ray, shadow_prd);
-
-			// Set color if we hit the light
-			if(!shadow_prd.hit)
-			{
-				color += Kd * nDl * diffuse_color;
-			}
-		}
-
 		// Send 9 rays
 		float d2_min = FLT_MAX;  // Min distance from light to occluder
 		float d2_max = -FLT_MAX; // Max distance from light to occluder
@@ -170,7 +148,7 @@ RT_PROGRAM void diffuse()
 
 			float3 L = normalize(light_pos - hit_point);
 			float nDl = dot(ffnormal, L);
-			//if(nDl > 0.0f) // Check if light is behind
+			if(nDl > 0.0f) // Check if light is behind
 			{
 				// TODO: Maybe d1 should be average of these?
 				float Ldist = length(light_pos - hit_point);
@@ -198,6 +176,10 @@ RT_PROGRAM void diffuse()
 					{
 						d2_max = d2;
 					}
+				}
+				else
+				{
+					color += Kd * nDl * diffuse_color * 1.f / 9.f;
 				}
 			}
 		}
@@ -228,11 +210,11 @@ RT_PROGRAM void diffuse()
 		const float omega_max_x = inv_s2 * omega_max_pix;
 
 		// If this pixel was occluded (that is, d2_max > 0)
-		if(d2_max > 0.f)
+		//if(d2_max > 0.f)
 		{
 			// Calculate filter width at current pixel
 			const float beta = 1.f / k * 1.f / mu * max(sigma * ((d1 / d2_max) - 1.f), //1.f / omega_max_x); // TODO: Calculate the omega_max_x and use it
-																					   -1000.0f);
+																					   6.f);
 			prd_diffuse.beta = beta;
 		}
 

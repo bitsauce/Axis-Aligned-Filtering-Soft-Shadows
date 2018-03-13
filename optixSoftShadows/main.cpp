@@ -217,11 +217,13 @@ void glutDisplay()
 	if(animateLight)
 	{
 		light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
-								   548.6f,
+								   520.0f,
 								   227.0f + sin(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f);
 		memcpy(lightBuffer->map(), &light, sizeof(light));
 		lightBuffer->unmap();
 		context["lights"]->setBuffer(lightBuffer);
+
+		//context["filter_window"] =  ;
 	}
 
 	// Render diffuse image
@@ -406,7 +408,7 @@ GeometryInstance createParallelogram(
 void createScene()
 {
 	// Setup light
-	light.corner = make_float3(343.0f, 548.6f, 227.0f);
+	light.corner = make_float3(343.0f, 520.0f, 227.0f);
 	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
 	light.v2 = make_float3(0.0f, 0.0f, 130.0f);
 	light.normal = normalize(cross(light.v1, light.v2));
