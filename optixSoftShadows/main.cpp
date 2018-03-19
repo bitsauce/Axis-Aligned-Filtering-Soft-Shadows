@@ -26,44 +26,21 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#if defined(__APPLE__)
-#  include <GLUT/glut.h>
-#else
-#  include <GL/glew.h>
-#  if defined(_WIN32)
-#    include <GL/wglew.h>
-#    include <GL/freeglut.h>
-#  endif
-#  include <GL/glut.h>
-#endif
-
-#include <optix.h>
-#include <optixu/optixpp_namespace.h>
-#include <optixu/optixu_math_stream_namespace.h>
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <sutil.h>
-#include <sstream>
-#include <algorithm>
-#include <numeric>
-#include <list>
-
+#include "common.h"
 #include "util.h"
 #include "structs.h"
+#include "scenes.h"
 
-using namespace optix;
+#define SCENE_CLASS GridScene
+
+Context context = 0;
+const int width = 1280, height = 720;
+std::map<std::string, const char*> cudaFiles;
 
 // Some forward declarations
 void updateCamera();
 void initWindow(int*, char**);
 void destroyContext();
-
-// OptiX context
-Context context = 0;
-const int width = 1280, height = 720;
-const char *mainPTX, *groundTruthPTX, *blurPTX, *parallelogramPTX, *normalizePTX, *calculateDisparityPTX;
 
 // Camera
 struct
@@ -126,10 +103,10 @@ State state = DEFAULT;
 bool animateLight = true;
 bool showMenus = true;
 bool generateDisparityMap = false;
+bool saveScreenshot = false;
+Scene *scene = 0;
 
 // CUDA buffers
-ParallelogramLight light;
-Buffer lightBuffer;
 Buffer diffuseBuffer;
 Buffer geometryHitBuffer;
 Buffer disparityBuffer;
@@ -144,6 +121,17 @@ Buffer numSamplesBuffer;
 //--------------------------------------------------------------
 // Render loop
 //--------------------------------------------------------------
+
+void drawStrings(std::vector<std::string> strings, int x, int y, int dx, int dy)
+{
+	if(!showMenus) return;
+	for(int i = 0; i < strings.size(); i++)
+	{
+		sutil::displayText(strings[i].c_str(), x, y);
+		x += dx;
+		y += dy;
+	}
+}
 
 void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue, float &avg)
 {
@@ -171,18 +159,7 @@ void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue, float &avg
 	avg = std::accumulate(values.begin(), values.end(), 0.0f) / values.size();
 }
 
-void drawStrings(std::vector<std::string> strings, int x, int y, int dx, int dy)
-{
-	if(!showMenus) return;
-	for(int i = 0; i < strings.size(); i++)
-	{
-		sutil::displayText(strings[i].c_str(), x, y);
-		x += dx;
-		y += dy;
-	}
-}
-
-void normalizeAndDisplayBuffer(Buffer buffer)
+Buffer normalizeBuffer(Buffer buffer)
 {
 	// Normalize and display the beta buffer
 	float minValue, maxValue, avgValue;
@@ -190,6 +167,7 @@ void normalizeAndDisplayBuffer(Buffer buffer)
 	context["max_value"]->setFloat(maxValue);
 	context["normalize_buffer"]->set(buffer);
 	context->launch(NORMALIZE_PROGRAM, width, height);
+	
 	sutil::displayBufferGL(buffer);
 
 	std::vector<std::string> strings;
@@ -197,36 +175,14 @@ void normalizeAndDisplayBuffer(Buffer buffer)
 	strings.push_back("Max: " + std::to_string(maxValue));
 	strings.push_back("Avg: " + std::to_string(avgValue));
 	drawStrings(strings, width - 150, 55, 0, -20);
-}
 
-#include <stdio.h>
-#include <time.h>
-
-#define LOGNAME_FORMAT "[%Y-%m-%d] [%H-%M-%S]"
-#define LOGNAME_SIZE 24
-
-std::string getTimeStamp()
-{
-	static char name[LOGNAME_SIZE];
-	time_t now = time(0);
-	strftime(name, sizeof(name), LOGNAME_FORMAT, localtime(&now));
-	return name;
+	return buffer;
 }
 
 void glutDisplay()
 {
 	updateCamera();
-	if(animateLight)
-	{
-		light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
-								   520.0f,
-								   227.0f + sin(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f);
-		memcpy(lightBuffer->map(), &light, sizeof(light));
-		lightBuffer->unmap();
-		context["lights"]->setBuffer(lightBuffer);
-
-		//context["filter_window"] =  ;
-	}
+	scene->update();
 
 	// Sample geometry hits
 	context->launch(GEOMETRY_HIT_PROGRAM, width, height);
@@ -236,39 +192,41 @@ void glutDisplay()
 
 	context["blur_h_buffer"]->set(diffuseBuffer);
 
+	Buffer bufferToDisplay; bool alreadyShown = false;
 	switch(generateDisparityMap ? DEFAULT : state)
 	{
 		case DEFAULT:
 		{
-			// Gaussian blur
 			context->launch(BLUR_H_PROGRAM, width, height);
 			context->launch(BLUR_V_PROGRAM, width, height);
-			sutil::displayBufferGL(context["blur_v_buffer"]->getBuffer());
+			bufferToDisplay = context["blur_v_buffer"]->getBuffer();
 		}
 		break;
 
 		case SHOW_DIFFUSE:
 		{
-			sutil::displayBufferGL(context["diffuse_buffer"]->getBuffer());
+			bufferToDisplay = context["diffuse_buffer"]->getBuffer();
 		}
 		break;
 
 		case SHOW_DEPTH:
 		{
-			normalizeAndDisplayBuffer(context["depth_buffer"]->getBuffer());
+			bufferToDisplay = normalizeBuffer(context["depth_buffer"]->getBuffer());
+			alreadyShown = true;
 		}
 		break;
 
 		case SHOW_OBJECT_IDS:
 		{
-			normalizeAndDisplayBuffer(context["object_id_buffer"]->getBuffer());
+			bufferToDisplay = normalizeBuffer(context["object_id_buffer"]->getBuffer());
+			alreadyShown = true;
 		}
 		break;
 
 		case SHOW_H_BLUR:
 		{
 			context->launch(BLUR_H_PROGRAM, width, height);
-			sutil::displayBufferGL(context["blur_h_buffer"]->getBuffer());
+			bufferToDisplay = context["blur_h_buffer"]->getBuffer();
 		}
 		break;
 
@@ -276,26 +234,31 @@ void glutDisplay()
 		{
 			context["blur_h_buffer"]->set(diffuseBuffer);
 			context->launch(BLUR_V_PROGRAM, width, height);
-			sutil::displayBufferGL(context["blur_v_buffer"]->getBuffer());
+			bufferToDisplay = context["blur_v_buffer"]->getBuffer();
 		}
 		break;
 
 		case SHOW_BETA:
 		{
-			normalizeAndDisplayBuffer(context["beta_buffer"]->getBuffer());
+			bufferToDisplay = normalizeBuffer(context["beta_buffer"]->getBuffer());
+			alreadyShown = true;
 		}
 		break;
 
 		case SHOW_NUM_SAMPLES:
 		{
-			normalizeAndDisplayBuffer(context["num_samples_buffer"]->getBuffer());
+			bufferToDisplay = normalizeBuffer(context["num_samples_buffer"]->getBuffer());
+			alreadyShown = true;
 		}
 		break;
 
 		default:
-			sutil::displayBufferGL(context["diffuse_buffer"]->getBuffer());
+			bufferToDisplay = context["diffuse_buffer"]->getBuffer();
 			break;
 	}
+
+	// Show buffer
+	if(!alreadyShown) sutil::displayBufferGL(bufferToDisplay);
 
 	if(generateDisparityMap)
 	{
@@ -308,9 +271,9 @@ void glutDisplay()
 
 		// Save all three images
 		std::string timeStamp = getTimeStamp();
-		sutil::displayBufferPPM(("output_images/" + timeStamp + " filtered.ppm").c_str(), context["blur_v_buffer"]->getBuffer());
-		sutil::displayBufferPPM(("output_images/" + timeStamp + " ground_truth.ppm").c_str(), context["diffuse_buffer"]->getBuffer());
-		sutil::displayBufferPPM(("output_images/" + timeStamp + " disparity_map.ppm").c_str(), context["disparity_buffer"]->getBuffer());
+		sutil::displayBufferPPM(("screenshots/" + timeStamp + " filtered.ppm").c_str(), context["blur_v_buffer"]->getBuffer());
+		sutil::displayBufferPPM(("screenshots/" + timeStamp + " ground_truth.ppm").c_str(), context["diffuse_buffer"]->getBuffer());
+		sutil::displayBufferPPM(("screenshots/" + timeStamp + " disparity_map.ppm").c_str(), context["disparity_buffer"]->getBuffer());
 
 		// Toggle disparity map generation
 		generateDisparityMap = false;
@@ -319,7 +282,7 @@ void glutDisplay()
 	std::string stateName = "MISSING";
 	switch(state)
 	{
-		case DEFAULT: stateName = "SoftShadows"; break;
+		case DEFAULT: stateName = "Soft Shadows"; break;
 		case SHOW_DIFFUSE: stateName = "Diffuse"; break;
 		case SHOW_DEPTH: stateName = "Depth"; break;
 		case SHOW_OBJECT_IDS: stateName = "Object IDs"; break;
@@ -327,6 +290,13 @@ void glutDisplay()
 		case SHOW_V_BLUR: stateName = "Blur V"; break;
 		case SHOW_BETA: stateName = "Beta"; break;
 		case SHOW_NUM_SAMPLES: stateName = "Num Samples"; break;
+	}
+
+	if(saveScreenshot) 
+	{
+		std::string timeStamp = getTimeStamp();
+		sutil::displayBufferPPM(("screenshots/" + timeStamp + " " + stateName + ".ppm").c_str(), bufferToDisplay);
+		saveScreenshot = false;
 	}
 
 	// Display world info
@@ -346,175 +316,11 @@ void glutDisplay()
 	topRightInfo.push_back("P: Pause Animations");
 	topRightInfo.push_back("M: Toggle Menus");
 	topRightInfo.push_back("O: Generate Disparity Map");
-	topRightInfo.push_back("1/2: Next/Prev State");
+	topRightInfo.push_back("C: Capture Screen");
+	topRightInfo.push_back("1/2: Prev/Next State");
 	drawStrings(topRightInfo, width - 200, height - 15, 0, -20);
 
 	glutSwapBuffers();
-}
-
-//--------------------------------------------------------------
-// Scene & geometry
-//--------------------------------------------------------------
-
-void setMaterial(
-	GeometryInstance& gi,
-	Material material,
-	const std::string& color_name,
-	const float3& color)
-{
-	gi->addMaterial(material);
-	gi[color_name]->setFloat(color);
-}
-
-uint objectID = 0;
-
-GeometryInstance createParallelogram(
-	const float3& anchor,
-	const float3& offset1,
-	const float3& offset2)
-{
-	Program pgram_bounding_box = context->createProgramFromPTXString(parallelogramPTX, "bounds");
-	Program pgram_intersection = context->createProgramFromPTXString(parallelogramPTX, "intersect");
-
-	Geometry parallelogram = context->createGeometry();
-	parallelogram->setPrimitiveCount(1u);
-	parallelogram->setIntersectionProgram(pgram_intersection);
-	parallelogram->setBoundingBoxProgram(pgram_bounding_box);
-
-	float3 normal = normalize(cross(offset1, offset2));
-	float d = dot(normal, anchor);
-	float4 plane = make_float4(normal, d);
-
-	float3 v1 = offset1 / dot(offset1, offset1);
-	float3 v2 = offset2 / dot(offset2, offset2);
-
-	parallelogram["plane"]->setFloat(plane);
-	parallelogram["anchor"]->setFloat(anchor);
-	parallelogram["v1"]->setFloat(v1);
-	parallelogram["v2"]->setFloat(v2);
-
-	GeometryInstance gi = context->createGeometryInstance();
-	gi->setGeometry(parallelogram);
-	gi["object_id"]->setUint(++objectID);
-	return gi;
-}
-
-void createScene()
-{
-	// Setup light
-	light.corner = make_float3(343.0f, 520.0f, 227.0f);
-	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
-	light.v2 = make_float3(0.0f, 0.0f, 130.0f);
-	light.normal = normalize(cross(light.v1, light.v2));
-	light.emission = make_float3(15.0f, 15.0f, 5.0f);
-
-	lightBuffer = context->createBuffer(RT_BUFFER_INPUT);
-	lightBuffer->setFormat(RT_FORMAT_USER);
-	lightBuffer->setElementSize(sizeof(ParallelogramLight));
-	lightBuffer->setSize(1u);
-	memcpy(lightBuffer->map(), &light, sizeof(light));
-	lightBuffer->unmap();
-	context["lights"]->setBuffer(lightBuffer);
-
-	// Material
-	Material diffuse = context->createMaterial();
-	diffuse->setClosestHitProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "diffuse"));
-	diffuse->setClosestHitProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(groundTruthPTX, "diffuse"));
-	diffuse->setClosestHitProgram(GEOMETRY_HIT_RAY, context->createProgramFromPTXString(mainPTX, "sample_geometry_hit"));
-	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(mainPTX, "shadow"));
-
-	diffuse["Ka"]->setFloat(0.3f, 0.3f, 0.3f);
-	diffuse["Kd"]->setFloat(0.6f, 0.7f, 0.8f);
-	diffuse["Ks"]->setFloat(0.8f, 0.9f, 0.8f);
-	diffuse["phong_exp"]->setFloat(88);
-	diffuse["reflectivity_n"]->setFloat(0.2f, 0.2f, 0.2f);
-
-	// create geometry instances
-	std::vector<GeometryInstance> gis;
-
-	const float3 white = make_float3(0.8f, 0.8f, 0.8f);
-	const float3 green = make_float3(0.05f, 0.8f, 0.05f);
-	const float3 red = make_float3(0.8f, 0.05f, 0.05f);
-	const float3 light_em = make_float3(15.0f, 15.0f, 5.0f);
-
-	// Floor
-	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f),
-									  make_float3(556.0f, 0.0f, 0.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-
-	// Ceiling
-	gis.push_back(createParallelogram(make_float3(0.0f, 548.8f, 0.0f),
-									  make_float3(556.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-
-	// Back wall
-	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 559.2f),
-									  make_float3(0.0f, 548.8f, 0.0f),
-									  make_float3(556.0f, 0.0f, 0.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-
-	// Right wall
-	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 548.8f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", green);
-
-	// Left wall
-	gis.push_back(createParallelogram(make_float3(556.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f),
-									  make_float3(0.0f, 548.8f, 0.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", red);
-
-	// Short block
-	gis.push_back(createParallelogram(make_float3(130.0f, 165.0f, 65.0f),
-									  make_float3(-48.0f, 0.0f, 160.0f),
-									  make_float3(160.0f, 0.0f, 49.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(290.0f, 0.0f, 114.0f),
-									  make_float3(0.0f, 165.0f, 0.0f),
-									  make_float3(-50.0f, 0.0f, 158.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(130.0f, 0.0f, 65.0f),
-									  make_float3(0.0f, 165.0f, 0.0f),
-									  make_float3(160.0f, 0.0f, 49.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(82.0f, 0.0f, 225.0f),
-									  make_float3(0.0f, 165.0f, 0.0f),
-									  make_float3(48.0f, 0.0f, -160.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(240.0f, 0.0f, 272.0f),
-									  make_float3(0.0f, 165.0f, 0.0f),
-									  make_float3(-158.0f, 0.0f, -47.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-
-	// Tall block
-	gis.push_back(createParallelogram(make_float3(423.0f, 330.0f, 247.0f),
-									  make_float3(-158.0f, 0.0f, 49.0f),
-									  make_float3(49.0f, 0.0f, 159.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(423.0f, 0.0f, 247.0f),
-									  make_float3(0.0f, 330.0f, 0.0f),
-									  make_float3(49.0f, 0.0f, 159.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(472.0f, 0.0f, 406.0f),
-									  make_float3(0.0f, 330.0f, 0.0f),
-									  make_float3(-158.0f, 0.0f, 50.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(314.0f, 0.0f, 456.0f),
-									  make_float3(0.0f, 330.0f, 0.0f),
-									  make_float3(-49.0f, 0.0f, -160.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	gis.push_back(createParallelogram(make_float3(265.0f, 0.0f, 296.0f),
-									  make_float3(0.0f, 330.0f, 0.0f),
-									  make_float3(158.0f, 0.0f, -49.0f)));
-	setMaterial(gis.back(), diffuse, "diffuse_color", white);
-	
-	// Create geometry group
-	GeometryGroup geometry_group = context->createGeometryGroup(gis.begin(), gis.end());
-	geometry_group->setAcceleration(context->createAcceleration("NoAccel"));
-	context["scene_geometry"]->set(geometry_group);
 }
 
 //--------------------------------------------------------------
@@ -614,9 +420,10 @@ void glutKeyboardUp(unsigned char k, int, int)
 	case 'd': actionState[MOVE_RIGHT] = false; break;
 	case 'q': actionState[MOVE_UP] = false; break;
 	case 'e': actionState[MOVE_DOWN] = false; break;
-	case 'p': animateLight = !animateLight; break;
+	case 'p': scene->animate = !scene->animate; break;
 	case 'm': showMenus = !showMenus; break;
 	case 'o': generateDisparityMap = true; break;
+	case 'c': saveScreenshot = true; break;
 	case '2': state = State((state + 1) % NUM_STATES); break;
 	case '1': state = State((state - 1 + NUM_STATES) % NUM_STATES); break;
 	}
@@ -643,12 +450,12 @@ int main(int argc, char* argv[])
 		context->setEntryPointCount(NUM_PROGRAMS);
 
 		// Load CUDA programs
-		mainPTX = loadCudaFile("main.cu");
-		groundTruthPTX = loadCudaFile("ground_truth.cu");
-		blurPTX = loadCudaFile("gaussian_blur.cu");
-		parallelogramPTX = loadCudaFile("parallelogram.cu");
-		normalizePTX = loadCudaFile("normalize.cu");
-		calculateDisparityPTX = loadCudaFile("calculate_disparity.cu");
+		cudaFiles["main"]          = loadCudaFile("main.cu");
+		cudaFiles["ground_truth"]  = loadCudaFile("ground_truth.cu");
+		cudaFiles["gaussian_blur"] = loadCudaFile("gaussian_blur.cu");
+		cudaFiles["parallelogram"] = loadCudaFile("parallelogram.cu");
+		cudaFiles["normalize"]     = loadCudaFile("normalize.cu");
+		cudaFiles["calculate_disparity"] = loadCudaFile("calculate_disparity.cu");
 
 		// Create output buffer
 		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
@@ -663,7 +470,7 @@ int main(int argc, char* argv[])
 		numSamplesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 
 		// Set ray generation program
-		context->setRayGenerationProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "trace_ray"));
+		context->setRayGenerationProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "trace_ray"));
 		context["diffuse_buffer"]->set(diffuseBuffer);
 		context["beta_buffer"]->set(betaBuffer);
 		context["depth_buffer"]->set(depthBuffer);
@@ -672,40 +479,40 @@ int main(int argc, char* argv[])
 		context["num_samples_buffer"]->set(numSamplesBuffer);
 
 		// Exception program
-		context->setExceptionProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(mainPTX, "exception"));
+		context->setExceptionProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "exception"));
 		context["bad_color"]->setFloat(1.0f, 0.0f, 1.0f);
 
 		// Miss program
-		context->setMissProgram(DIFFUSE_RAY, context->createProgramFromPTXString(mainPTX, "miss"));
+		context->setMissProgram(DIFFUSE_RAY, context->createProgramFromPTXString(cudaFiles["main"], "miss"));
 		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
 
 
-		context->setRayGenerationProgram(GEOMETRY_HIT_PROGRAM, context->createProgramFromPTXString(mainPTX, "trace_geometry_hit"));
+		context->setRayGenerationProgram(GEOMETRY_HIT_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "trace_geometry_hit"));
 		context["geometry_hit_buffer"]->setBuffer(geometryHitBuffer);
 
 		// Set ray generation program
-		context->setRayGenerationProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(groundTruthPTX, "trace_ray"));
-		context->setExceptionProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(groundTruthPTX, "exception"));
-		context->setMissProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(groundTruthPTX, "miss"));
+		context->setRayGenerationProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(cudaFiles["ground_truth"], "trace_ray"));
+		context->setExceptionProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(cudaFiles["ground_truth"], "exception"));
+		context->setMissProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(cudaFiles["ground_truth"], "miss"));
 
 		// Set blur program
-		context->setRayGenerationProgram(BLUR_H_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurH"));
-		context->setRayGenerationProgram(BLUR_V_PROGRAM, context->createProgramFromPTXString(blurPTX, "blurV"));
+		context->setRayGenerationProgram(BLUR_H_PROGRAM, context->createProgramFromPTXString(cudaFiles["gaussian_blur"], "blurH"));
+		context->setRayGenerationProgram(BLUR_V_PROGRAM, context->createProgramFromPTXString(cudaFiles["gaussian_blur"], "blurV"));
 		context["blur_h_buffer"]->set(blurHBuffer);
 		context["blur_v_buffer"]->set(blurVBuffer);
 
 		// Set normalize program
-		context->setRayGenerationProgram(NORMALIZE_PROGRAM, context->createProgramFromPTXString(normalizePTX, "normalize"));
+		context->setRayGenerationProgram(NORMALIZE_PROGRAM, context->createProgramFromPTXString(cudaFiles["normalize"], "normalize"));
 		context["normalize_buffer"]->set(betaBuffer);
 
 		// Set normalize program
-		context->setRayGenerationProgram(DISPARITY_PROGRAM, context->createProgramFromPTXString(calculateDisparityPTX, "calculate_disparity"));
+		context->setRayGenerationProgram(DISPARITY_PROGRAM, context->createProgramFromPTXString(cudaFiles["calculate_disparity"], "calculate_disparity"));
 		context["disparity_buffer"]->set(disparityBuffer);
 		context["input_buffer_0"]->set(blurVBuffer);
 		context["input_buffer_1"]->set(diffuseBuffer);
 
 		// Setup scene and camera
-		createScene();
+		scene = new SCENE_CLASS();
 		setupCamera();
 		updateCamera();
 

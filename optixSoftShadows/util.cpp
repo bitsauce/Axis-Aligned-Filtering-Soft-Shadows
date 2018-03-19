@@ -114,3 +114,14 @@ const char* loadCudaFile(
 
 	return ptx->c_str();
 }
+
+#define LOGNAME_FORMAT "[%Y-%m-%d] [%H-%M-%S]"
+#define LOGNAME_SIZE 24
+
+std::string getTimeStamp()
+{
+	static char name[LOGNAME_SIZE];
+	time_t now = time(0);
+	strftime(name, sizeof(name), LOGNAME_FORMAT, localtime(&now));
+	return name;
+}
