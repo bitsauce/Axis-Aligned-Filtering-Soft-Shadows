@@ -70,7 +70,7 @@ Here we can clearly see that this method will blur more on the outer edges of th
 ### Image-Space Blur
 
 <p align="center">
-  <img src="figures/gauss_formula.PNG">
+  <img src="figures/gauss_formula.png">
 </p>
 
 We apply the betas we calculated from the previous step to do a spatially-varying gaussian blur in image-space, given by the formula above. Beta correspond to the standard deviations of the gaussian blur at a given pixel. We also need to calculate the projected distance _||x-x'||_. This value represents the distance between the pixels, parallel to the light plane. To compute this, we created a change-of-basis matrix using the light's vectors, with the normal vector in the third column, then multiplied it by each pixel's world position and discarded the z-component.
@@ -83,11 +83,9 @@ Finally, we separate the gaussian blur a horizontal pass and a vertical pass. To
 
 ## Results
 
-As of this time, we had quite decent results, and we held a presentation of our project in class. Our filtering used gaussian offsets corresponding to image-space pixel positions. We had started writing code for world-space based gaussian offsets, but it wasn't complete, so we continued to work on this. In the filter passes, we used the distance between the center pixel and the neighboring pixels' light-parallel positions as gaussian offsets, in accordance to the theory of the paper. Surprisingly enough, the results we obtained were nearly identical to the results from the original image-space offsets, also when comparing the disparity maps. So you could skip this step and use the image-space offsets to get a small performance boost, but this might also cause you to run into artefacts under certain scenarios as it is not as physically accurate as the world-space based offsets.
+We are satisfied with the results we got. Our method is currently running at interactive frame-rates (~10-30 frames per second) on a GeForce GTX 970. Throughout the process, we found that there are some simplifications which could be made. For example, when we were implementing the offset in the gaussian for the image-space blur, we found that the results are nearly identical to the results from just using the image-space (pixel) offsets. As such, you could skip this step and use the image-space offsets to get a small performance boost, but this might also cause you to run into artefacts under certain scenarios as it is not as physically accurate as the world-space based offsets.
 
-In addition to this, we added some new models to better test self-shadowing and complex shadows. We extended our filter's object ID check to also compare normals; each sample is required to be within a specified angle of the center sample to be included in the blurred result. We also added a filter that averages the occlusion distances in a 10x10 pixel area for completely unoccluded pixels to reduce noise for these pixels. Like our main filter, this filter also consists of two passes and is based on separable convolution. Besides this, we changed the grayscale debug visualization to a heatmap.
-
-Below is a sequence of images showing soft shadows for one of the new models we added and how the shadows compare to the ground truth. The first image shows the unfiltered version of the soft shadows. The second image shows the filtered result. In the third image, you can see the ground truth, and in the fourth image you can see the enhanced difference between the filtered result and the ground truth. The difference is small, but the filtered result looks slightly more smudgy. This is due to noise from the sampling. Also, if you look at for example the stem of the flower, you can see that the filtered result has blurred the sharp, black edge from the ground truth image. The lightest regions in the difference map are a result of blurring artefacts like this one. The reason for this blurring occurring is that the filter width is not exactly zero in those regions, causing some areas with very high occlusion frequencies to be blurred a little.
+In addition to this, we added some new models to better test self-shadowing and complex shadows. Here are some screenshots from these scenes:
 
 <p align="center">
   <img src="optixSoftShadows/screenshots/flower_diffuse.png">
@@ -105,6 +103,7 @@ Below is a sequence of images showing soft shadows for one of the new models we 
   <img src="optixSoftShadows/screenshots/flower_difference.png">
 </p>
 
-## Conclusions & Improvements
 
-From this we have learned that physically accurate soft shadows can be sampled very efficiently at interactive framerates. The paper was published in 2012, and we can see clear improvements in framerate after having tested our implementation on newer graphics cards. The paper used an NVIDIA GTX 570 for its test results. We used one of today's corresponding models, the NVIDIA GTX 970. From hardware evolution, as well as from research progress in the area, we can see that we are getting closer and closer to raytracing being a viable option for real-time applications.
+## Conclusion
+
+From this, we have learned that physically accurate soft shadows can be sampled very efficiently at interactive framerates. The paper was published in 2012, and we can already see clear improvements in framerate due to advancements in modern graphics cards performance. With recent publications in real-time raytracing, such as NVIDIA's (*Spatiotemporal Variance-Guided Filtering*)[http://research.nvidia.com/publication/2017-07_Spatiotemporal-Variance-Guided-Filtering%3A], we can see that real-time raytracing is most likely going to be a viable option for real-time applications in the near future.
