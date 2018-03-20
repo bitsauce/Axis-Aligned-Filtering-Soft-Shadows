@@ -13,7 +13,7 @@ Given a planar area light source, we sample the distances from the geometry to t
 
 ## Implementation
 
-The implementation can be found [here](https://github.com/bitsauce/Axis-Aligned-Filtering-for-Interactive-Sampled-Soft-Shadows-Implementation). Our implementation uses NVIDIA's [OptiX](https://developer.nvidia.com/optix) to do real-time raytracing.
+The implementation can be found [here](https://github.com/bitsauce/Axis-Aligned-Filtering-Soft-Shadows). Our implementation uses NVIDIA's [OptiX](https://developer.nvidia.com/optix) to do real-time raytracing.
 
 ### Sample Distances
 
