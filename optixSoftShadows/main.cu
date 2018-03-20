@@ -215,9 +215,9 @@ RT_PROGRAM void diffuse()
 		const float3 light_center = light.corner + light.v1 * 0.5f + light.v2 * 0.5f;
 
 		Matrix3x3 projection_matrix;
-		projection_matrix.setCol(0, light.v1);
-		projection_matrix.setCol(1, light.v2);
-		projection_matrix.setCol(2, light.normal);
+		projection_matrix.setCol(0, normalize(light.v1));
+		projection_matrix.setCol(1, normalize(light.v2));
+		projection_matrix.setCol(2, normalize(light.normal));
 
 		float3 p_projected = projection_matrix * hit_point;
 		prd_diffuse.projected_distance = make_float2(p_projected);
@@ -239,7 +239,7 @@ RT_PROGRAM void diffuse()
 
 		// Standard deviation of Gaussian of the light
 		// TODO: Experiment with different sigmas
-		const float sigma = 130.f / 2.f;
+		const float sigma = 130.f * 2.f;
 
 		// If this pixel was occluded (that is, d2_max > 0)
 		if(d2_max > 0.f)
