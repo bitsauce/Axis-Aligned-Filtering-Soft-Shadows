@@ -31,8 +31,8 @@
 #include "structs.h"
 #include "scenes.h"
 
-#define SCENE_CLASS DefaultScene
-//#define SCENE_CLASS GridScene
+//#define SCENE_CLASS DefaultScene
+#define SCENE_CLASS GridScene
 
 Context context = 0;
 const int width = 1280, height = 720;
@@ -77,6 +77,7 @@ enum
 {
 	GEOMETRY_HIT_PROGRAM,
 	SAMPLE_DISTANCES_PROGRAM,
+	BLUR_D_H_PROGRAM,
 	CALCULATE_BETA_PROGRAM,
 	BLUR_H_PROGRAM,
 	BLUR_V_PROGRAM,
@@ -197,6 +198,7 @@ void glutDisplay()
 	context->launch(SAMPLE_DISTANCES_PROGRAM, width, height);
 
 	// Calculate beta
+	context->launch(BLUR_D_H_PROGRAM, width, height);
 	context->launch(CALCULATE_BETA_PROGRAM, width, height);
 
 	context["blur_h_buffer"]->set(diffuseBuffer);
@@ -509,6 +511,7 @@ int main(int argc, char* argv[])
 		context["num_samples_buffer"]->set(numSamplesBuffer);
 
 		// Set calculate beta program
+		context->setRayGenerationProgram(BLUR_D_H_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "blur_d_h"));
 		context->setRayGenerationProgram(CALCULATE_BETA_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "calculate_beta"));
 
 		// Exception program

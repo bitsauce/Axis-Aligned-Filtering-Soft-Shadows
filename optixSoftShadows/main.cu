@@ -287,8 +287,49 @@ RT_PROGRAM void sample_distances()
 // Calculate beta
 //-----------------------------------------------------------------------------
 
+float gauss1D(const float x, const float std)
+{
+	const float sqrt_2_pi = sqrtf(2.f * M_PIf);
+	return expf(-(x * x) / (2.f * std * std)) / (sqrt_2_pi * std);
+}
+
+RT_PROGRAM void blur_d_h()
+{
+	size_t2 screen = geometry_hit_buffer.size();
+
+	// Get d1, d2_max from previous pass
+	float d2_max = d2_max_buffer[launch_index];
+	float d1 = d1_buffer[launch_index];
+
+	// For unocculded pixel, blur d1 and d2_max in a 5 px radius
+	if(d2_max == 0.f)
+	{
+		float sum = 0.f;
+		for(int i = -5; i <= 5; i++)
+		{
+			const uint2 pos = make_uint2(launch_index.x + i, launch_index.y);
+			if(pos.x >= screen.x) continue;
+			const float w = gauss1D(i, 1.f);
+			d1 += d1_buffer[pos] * w;
+			d2_max += d2_max_buffer[pos] * w;
+			sum += w;
+		}
+
+		// Store average
+		d1_buffer[launch_index] = d1 / sum;
+		d2_max_buffer[launch_index] = d2_max / sum;
+	}
+}
+
 RT_PROGRAM void calculate_beta()
 {
+	// Set default values if the ray from the previous pass missed
+	if(object_id_buffer[launch_index] == 0.f)
+	{
+		beta_buffer[launch_index] = 0.f;
+		return;
+	}
+
 	// Calculate projected distance per pixel
 	size_t2 screen = geometry_hit_buffer.size();
 	float3 hit_point = geometry_hit_buffer[launch_index];
@@ -310,14 +351,12 @@ RT_PROGRAM void calculate_beta()
 		float sum = 0.f;
 		for(int i = -5; i <= 5; i++)
 		{
-			for(int j = -5; j <= 5; j++)
-			{
-				const uint2 pos = make_uint2(launch_index.x + j, launch_index.y + i);
-				if(pos.x >= screen.x || pos.y >= screen.y) continue;
-				d1 += d1_buffer[pos];
-				d2_max += d2_max_buffer[pos];
-				sum += 1.f;
-			}
+			const uint2 pos = make_uint2(launch_index.x, launch_index.y + i);
+			if(pos.y >= screen.y) continue;
+			const float w = gauss1D(i, 1.f);
+			d1 += d1_buffer[pos] * w;
+			d2_max += d2_max_buffer[pos] * w;
+			sum += w;
 		}
 
 		// Get average
@@ -336,7 +375,7 @@ RT_PROGRAM void calculate_beta()
 
 	// Calculate filter width at current pixel
 	const float beta = 1.f / k * 1.f / mu * max(sigma * s2, 1.f / omega_max_x);
-	beta_buffer[launch_index] = min(beta, max_beta);
+	beta_buffer[launch_index] = max(min(beta, max_beta), 1.f);
 }
 
 //-----------------------------------------------------------------------------
