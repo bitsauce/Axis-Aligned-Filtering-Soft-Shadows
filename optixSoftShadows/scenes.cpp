@@ -200,7 +200,7 @@ GridScene::GridScene()
 
 	// Load mesh
 	Matrix4x4 matrix;
-	matrix = Matrix4x4::translate(make_float3(500, 100, 500)) * Matrix4x4::scale(make_float3(20, 20, 20)) * Matrix4x4::rotate(35, make_float3(1.0f, 0.0f, 0.0f)) * Matrix4x4::rotate(15, make_float3(0.0f, 1.0f, 0.0f));
+	matrix = Matrix4x4::translate(make_float3(500, 80, 500)) * Matrix4x4::scale(make_float3(20, 20, 20)) * Matrix4x4::rotate(35, make_float3(1.0f, 0.0f, 0.0f)) * Matrix4x4::rotate(15, make_float3(0.0f, 1.0f, 0.0f));
 	gis.push_back(loadMesh("meshes/grid.obj", diffuse, blue, matrix));
 	matrix = Matrix4x4::translate(make_float3(300, 0, 300)) * Matrix4x4::scale(make_float3(80, 80, 80));
 	gis.push_back(loadMesh("meshes/daisy2.obj", diffuse, green, matrix));
