@@ -17,6 +17,7 @@ The paper's method derives from recent work on frequency analysis and sheared fi
 
 The implementation can be found [here](https://github.com/bitsauce/Axis-Aligned-Filtering-for-Interactive-Sampled-Soft-Shadows-Implementation). Our implementation uses NVIDIA's [OptiX](https://developer.nvidia.com/optix) to do real-time raytracing.
 
+### Sample Distances
 
 In our implementation we start off by casting one ray per pixel to find the primary geometry hit. From this hit location, we now cast 9 rays per pixel towards 9 random points the area light source. This gives us values for _d2_max_ and _d2_min_ as illustrated below.
 
@@ -32,20 +33,54 @@ In our implementation we start off by casting one ray per pixel to find the prim
 
 While we sample the 9 values for _d2_, we also sample the intensity of the color, giving us the noisy output we will blur later, as seen above.
 
-So, now we have _d1_, _d2_min_ and _d2_max_. At this point we do adaptive sampling.
+### Adaptive Sampling
+
+So, now we have _d1_, _d2_min_ and _d2_max_. At this point we calculate the amount of additional samples using the formula given in the paper:
+
+<p align="center">
+  <img src="figures/adaptive_sampling_formula.png">
+</p>
+
+This tells us how many extra samples to do. The idea is that we need more information in high frequency areas, so we do additional samples in those regions. In our implementation, we decided to limit the maximum number of samples to 100 for practical purposes. We also update the color, _d1_, _d2_min_ and _d2_max_ as we're doing these additional samples. The figure below shows a visualization of the adaptive sampling.
+
+<p align="center">
+  <img src="optixSoftShadows/screenshots/boxes_num_samples.png">
+</p>
+
+REASON??
+
+After obtaining our values of _d2_, we go 2D an gaussian average over _d1_ and _d2_ in a 5 pixel radius. This is to remove some noise introduced by pixels completely unoccluded pixels.
+
+### Standard Deviation Calculation
+
+Now we can finally calculate the standard deviation of the gaussian blur which is to be applied over the screen. This value is given by the following formula:
+
+<p align="center">
+  <img src="figures/beta_formula.png">
+</p>
+
+Below is a visualization of the betas we obtained:
+
+<p align="center">
+  <img src="optixSoftShadows/screenshots/boxes_beta.png">
+</p>
+
+REASON??
+
+### Image-Space Blur
+
+ADD GAUSS FORMULA
+
+We apply the betas we calculated from the previous step to do a spatially-varying gaussian blur in image-space. These values of beta correspont to the standard deviations of the gaussian blur at a given pixel. We also separate the gaussian blur a horizontal pass and a vertical pass. To avoid blurring accross objects, compare the object ID and surface normal of the pixel before applying the blur.
 
 
-These values are used to find filter widths for blurring the noise, and an additional sample count to further enhance accuracy in the most complex areas of the shadows. Then the filtering is applied. The filtering is axis-aligned and done in image-space, providing great performance and making interaction possible.
 
 
-
-
-
+<!-- These values are used to find filter widths for blurring the noise, and an additional sample count to further enhance accuracy in the most complex areas of the shadows. Then the filtering is applied. The filtering is axis-aligned and done in image-space, providing great performance and making interaction possible.
 We continued working on our implementation and added occlusion calculation and debugging functionality. For the occlusion calculation, nine rays per pixel are sent toward random points on the light source to obtain distances between the light source and the closest and furthest occluder. We approximate the distance between the light source and the pixels by using the center of the light source. In the same pass, we calculate the filter widths using the equations from the paper and store them in a float buffer. The debugging functionality we implemented let us use the arrow keys to move back and forth to look at different buffers, visualized by normalizing the buffer to make the greatest value correspond to white, and the lowest to black. It also let us see the minimum, average, and maximum value in text form, as well as the framerate.
+We went back to the pass for the filter width calculation, and implemented adaptive sampling. The adaptive sampling is used to improve both the diffuse accuracy and the filter widths, and is based on the equations from the paper, which uses the occlusion distances. We use an upper limit of 100 samples per pixel. To compare our results with ground truth, we extended our debugging tools to generate three images upon a button press; a filtered result image, a ground truth image, and a disparity map. -->
 
-We then implemented the axis-aligned filtering. We separate the filtering into two passes based on separable convolution; a pass that blurs the shadows horizontally, followed by a pass that blurs the first pass' result vertically. The computed filter widths correspond to standard deviations in a spatially varying gaussian blur. To avoid sampling from other objects, we created an object ID buffer where each object's pixels gets its own unique value.
-
-We went back to the pass for the filter width calculation, and implemented adaptive sampling. The adaptive sampling is used to improve both the diffuse accuracy and the filter widths, and is based on the equations from the paper, which uses the occlusion distances. We use an upper limit of 100 samples per pixel. To compare our results with ground truth, we extended our debugging tools to generate three images upon a button press; a filtered result image, a ground truth image, and a disparity map.
+## Results
 
 As of this time, we had quite decent results, and we held a presentation of our project in class. Our filtering used gaussian offsets corresponding to image-space pixel positions. We had started writing code for world-space based gaussian offsets, but it wasn't complete, so we continued to work on this. The approach we used was to compute and store the 2D light-parallel position of each pixel in the same pass as the filter width and adaptive sampling calculations. To compute the positions, we created a change-of-basis matrix using the light's vectors, with the normal vector in the third column, then multiplied it by each pixel's world position and discarded the z-component. In the filter passes, we used the distance between the center pixel and the neighboring pixels' light-parallel positions as gaussian offsets, in accordance to the theory of the paper. Surprisingly enough, the results we obtained were nearly identical to the results from the original image-space offsets, also when comparing the disparity maps. So you could skip this step and use the image-space offsets to get a small performance boost, but this might also cause you to run into artefacts under certain scenarios as it is not as physically accurate as the world-space based offsets.
 
@@ -66,5 +101,7 @@ As of this time, we had quite decent results, and we held a presentation of our 
 </p>
 
 In addition to this, we added some new models to better test self-shadowing and complex shadows. We extended our filter's object ID check to also compare normals; each sample is required to be within a specified angle of the center sample to be included in the blurred result. We also added a filter that averages the occlusion distances in a 10x10 pixel area for completely unoccluded pixels to reduce noise for these pixels. Like our main filter, this filter also consists of two passes and is based on separable convolution. Besides this, we changed the grayscale debug visualization to a heatmap.
+
+## Conclusions & Improvements
 
 From this we have learned that physically accurate soft shadows can be sampled very efficiently at interactive framerates. The paper was published in 2012, and we can see clear improvements in framerate after having tested our implementation on newer graphics cards. The paper used an NVIDIA GTX 570 for its test results. We used one of today's corresponding models, the NVIDIA GTX 970. From hardware evolution, as well as from research progress in the area, we can see that we are getting closer and closer to raytracing being a viable option for real-time applications.
