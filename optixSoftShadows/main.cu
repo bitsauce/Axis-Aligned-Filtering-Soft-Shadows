@@ -67,7 +67,6 @@ rtDeclareVariable(float3, W,   , );
 rtDeclareVariable(Ray, ray, rtCurrentRay, );
 rtDeclareVariable(PerRayData_geometry_hit, prd_geometry_hit, rtPayload, );
 rtDeclareVariable(PerRayData_distances, prd_distances, rtPayload, );
-rtDeclareVariable(PerRayData_adaptive, prd_adaptive, rtPayload, );
 rtDeclareVariable(PerRayData_shadow, prd_shadow, rtPayload, );
 
 // Light sources
@@ -211,9 +210,10 @@ RT_PROGRAM void sample_distances()
 		// Calculate distances parallel to the light source
 		// (used as a offset in the gaussian blur)
 		Matrix3x3 projection_matrix;
-		projection_matrix.setCol(0, light.v1);
-		projection_matrix.setCol(1, light.v2);
+		projection_matrix.setCol(0, normalize(light.v1));
+		projection_matrix.setCol(1, normalize(light.v2));
 		projection_matrix.setCol(2, light.normal);
+
 		float3 p_projected = projection_matrix * hit_point;
 		projected_distances_buffer[launch_index] = make_float2(p_projected);
 

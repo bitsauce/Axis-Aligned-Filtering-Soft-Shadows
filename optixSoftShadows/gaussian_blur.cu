@@ -27,7 +27,7 @@ RT_PROGRAM void blurH()
 	const float beta = beta_buffer[launch_index];
 
 	// TODO: Experiment with different kernel_sizes -- kernel as a function of beta?
-	const int kernel_size = 10.f;
+	const int kernel_size = min(beta * 4.0f, 10.0f);
 
 	if(beta == 0.f) {
 		blur_h_buffer[launch_index] = diffuse_buffer[launch_index];
@@ -38,17 +38,17 @@ RT_PROGRAM void blurH()
 	float3 geometry_normal = geometry_normal_buffer[launch_index];
 	float3 color = make_float3(0.f);
 	float sum = 0.f;
+	float2 center = projected_distances_buffer[launch_index];
 	for(int i = -kernel_size; i <= kernel_size; i++)
 	{
 		// Explointing interger underflow when pos.x < 0
 		const uint2 pos = make_uint2(launch_index.x + i, launch_index.y);
 		if(pos.x >= screen.x || object_id != object_id_buffer[pos]) continue;
 
-		/*float2 center = projected_distances_buffer[launch_index];
 		float2 p = projected_distances_buffer[pos];
-		const float offset = length(center - p);*/
+		const float offset = length(center - p);
 
-		const float w = gauss1D(i, beta) * dot(geometry_normal, geometry_normal_buffer[pos]);
+		const float w = gauss1D(offset, beta) * dot(geometry_normal, geometry_normal_buffer[pos]);
 		color += diffuse_buffer[pos] * w;
 		sum += w;
 	}
@@ -60,7 +60,7 @@ RT_PROGRAM void blurV()
 {
 	size_t2 screen = diffuse_buffer.size();
 	const float beta = beta_buffer[launch_index];
-	const int kernel_size = 10.f;
+	const int kernel_size = min(beta * 4.0f, 10.0f);
 
 	if(beta == 0.f) {
 		blur_v_buffer[launch_index] = diffuse_buffer[launch_index];
@@ -71,16 +71,16 @@ RT_PROGRAM void blurV()
 	float3 geometry_normal = geometry_normal_buffer[launch_index];
 	float3 color = make_float3(0.f);
 	float sum = 0.f;
+	float2 center = projected_distances_buffer[launch_index];
 	for(int i = -kernel_size; i <= kernel_size; i++)
 	{
 		const uint2 pos = make_uint2(launch_index.x, launch_index.y + i);
 		if(pos.y >= screen.y || object_id != object_id_buffer[pos]) continue;
 
-		/*float2 center = projected_distances_buffer[launch_index];
 		float2 p = projected_distances_buffer[pos];
-		const float offset = length(center - p) * offset_factor;*/
+		const float offset = length(center - p);
 
-		const float w = gauss1D(i, beta) * dot(geometry_normal, geometry_normal_buffer[pos]);
+		const float w = gauss1D(offset, beta) * dot(geometry_normal, geometry_normal_buffer[pos]);
 		color += blur_h_buffer[pos] * w;
 		sum += w;
 	}

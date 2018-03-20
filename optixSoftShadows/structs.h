@@ -40,15 +40,6 @@ struct PerRayData_distances
 	float3       color;              // Diffuse color
 	float2       projected_distance; // Projected distance to light
 	float        d1, d2_min, d2_max; // Sampled distances
-	unsigned int seed;               // Seed for random sampling
-};
-
-struct PerRayData_adaptive
-{
-	float3       color;              // Diffuse color
-	float        beta;			     // Filter width (screen-space standard deviation)
-	float        num_samples;	     // Number of adaptive samples
-	unsigned int seed;               // Seed for random sampling
 };
 
 struct PerRayData_geometry_hit
