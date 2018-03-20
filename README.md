@@ -71,7 +71,7 @@ Here we can clearly see that this method will blur more on the outer edges of th
   <img src="figures/gauss_formula.png">
 </p>
 
-We apply the betas we calculated from the previous step to do a spatially-varying gaussian blur in image-space, given by the formula above. Beta correspond to the standard deviations of the gaussian blur at a given pixel. We also need to calculate the projected distance _||x-x'||_. This value represents the distance between the pixels, parallel to the light plane. To compute this, we created a change-of-basis matrix using the light's vectors, with the normal vector in the third column, then multiplied it by each pixel's world position and discarded the z-component.
+We apply the betas we calculated from the previous step to do a spatially-varying gaussian blur in image-space, given by the formula above. Beta correspond to the standard deviations of the gaussian blur at a given pixel. We also need to calculate the projected distance _x-x'_. This value represents the distance between the pixels, parallel to the light plane. To compute this, we created a change-of-basis matrix using the light's vectors, with the normal vector in the third column, then multiplied it by each pixel's world position and discarded the z-component.
 
 Finally, we separate the gaussian blur a horizontal pass and a vertical pass. To avoid blurring across objects, compare the object ID and surface normal of the pixel before applying the blur. This produces the final image:
 
