@@ -79,6 +79,10 @@ rtDeclareVariable(float3, diffuse_color, , );
 rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
 rtDeclareVariable(uint, object_id, , );
 
+// Miss and exception color
+rtDeclareVariable(float3, bg_color, , );
+rtDeclareVariable(float3, bad_color, , );
+
 //--------------------------------------------------------------
 // Primary ray pass
 //--------------------------------------------------------------
@@ -181,12 +185,25 @@ const float k = 3.f;
 const float alpha = 1.f;
 const float mu = 2.f;
 const float max_num_samples = 100.f;
+const float max_beta = 10.f; // This is primarily for debug visualization
 
 // Standard deviation of Gaussian of the light
-const float sigma = 130.f / 2.f;
+const float sigma = 130.f * 2.f;
 
 RT_PROGRAM void sample_distances()
 {
+	// Set default values if the ray from the previous pass missed
+	if(object_id_buffer[launch_index] == 0.f)
+	{
+		diffuse_buffer[launch_index] = bg_color;
+		projected_distances_buffer[launch_index] = make_float2(0.f);
+		num_samples_buffer[launch_index] = 0.f;
+		d1_buffer[launch_index] = 0.f;
+		d2_min_buffer[launch_index] = 0.f;
+		d2_max_buffer[launch_index] = 0.f;
+		return;
+	}
+
 	size_t2 screen = geometry_hit_buffer.size();
 	float3 ffnormal = ffnormal_buffer[launch_index];
 	float3 hit_point = geometry_hit_buffer[launch_index];
@@ -312,23 +329,14 @@ RT_PROGRAM void calculate_beta()
 		//d2_max_buffer[launch_index] = d2_max;
 	}
 
-	// Make sure we can calculate beta
-	if(d2_max > 0.f)
-	{
-		// Update s2 and inv_s2
-		const float s2 = max(d1 / d2_max, 1.f) - 1.f;
-		const float inv_s2 = alpha / (1.f + s2);
-		const float omega_max_x = inv_s2 * omega_max_pix;
+	// Update s2 and inv_s2
+	const float s2 = max(d1 / d2_max, 1.f) - 1.f;
+	const float inv_s2 = alpha / (1.f + s2);
+	const float omega_max_x = inv_s2 * omega_max_pix;
 
-		// Calculate filter width at current pixel
-		const float beta = 1.f / k * 1.f / mu * max(sigma * s2, 1.f / omega_max_x);
-		beta_buffer[launch_index] = min(beta, 10.f);
-	}
-	else
-	{
-		// Pixel still unoccluded
-		beta_buffer[launch_index] = 0.f;
-	}
+	// Calculate filter width at current pixel
+	const float beta = 1.f / k * 1.f / mu * max(sigma * s2, 1.f / omega_max_x);
+	beta_buffer[launch_index] = min(beta, max_beta);
 }
 
 //-----------------------------------------------------------------------------
@@ -346,8 +354,6 @@ RT_PROGRAM void shadow()
 // Miss program
 //--------------------------------------------------------------
 
-rtDeclareVariable(float3, bg_color,,);
-
 RT_PROGRAM void distances_miss()
 {
 	prd_distances.color = bg_color;
@@ -359,13 +365,7 @@ RT_PROGRAM void distances_miss()
 // Exception
 //--------------------------------------------------------------
 
-rtDeclareVariable(float3, bad_color,,);
-
 RT_PROGRAM void exception()
 {
 	diffuse_buffer[launch_index] = bad_color;
-	beta_buffer[launch_index] = 0.f;
-	object_id_buffer[launch_index] = 0.f;
-	num_samples_buffer[launch_index] = 0.f;
-	geometry_normal_buffer[launch_index] = make_float3(0.f);
 }

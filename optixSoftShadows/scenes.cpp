@@ -24,7 +24,6 @@ DefaultScene::DefaultScene()
 
 	// Material
 	Material diffuse = context->createMaterial();
-	//diffuse->setClosestHitProgram(DISTANCES_RAY, context->createProgramFromPTXString(cudaFiles["main"], "distance_sampling_hit"));
 	diffuse->setClosestHitProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(cudaFiles["ground_truth"], "diffuse"));
 	diffuse->setClosestHitProgram(GEOMETRY_HIT_RAY, context->createProgramFromPTXString(cudaFiles["main"], "sample_geometry_hit"));
 	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(cudaFiles["main"], "shadow"));
@@ -174,7 +173,6 @@ GridScene::GridScene()
 
 	// Material
 	Material diffuse = context->createMaterial();
-	//diffuse->setClosestHitProgram(DISTANCES_RAY, context->createProgramFromPTXString(cudaFiles["main"], "distance_sampling_hit"));
 	diffuse->setClosestHitProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(cudaFiles["ground_truth"], "diffuse"));
 	diffuse->setClosestHitProgram(GEOMETRY_HIT_RAY, context->createProgramFromPTXString(cudaFiles["main"], "sample_geometry_hit"));
 	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(cudaFiles["main"], "shadow"));

@@ -14,9 +14,7 @@ rtDeclareVariable(float, max_value, , );
 
 RT_PROGRAM void normalize()
 {
-	normalize_buffer[launch_index] /= max_value;
-
-	float greyValue = normalize_buffer[launch_index];
+	float greyValue = normalize_buffer[launch_index] / max_value;
 	float3 heat = make_float3(0.f, 0.f, 0.f);
 
 	heat.x = smoothstep(0.5f, 0.8f, greyValue);

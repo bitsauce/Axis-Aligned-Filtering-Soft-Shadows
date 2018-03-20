@@ -11,9 +11,10 @@ using namespace optix;
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 rtBuffer<float3, 2> input_buffer_0;
 rtBuffer<float3, 2> input_buffer_1;
-rtBuffer<float3, 2> disparity_buffer;
+rtBuffer<float3, 2> difference_buffer;
 
-RT_PROGRAM void calculate_disparity()
+RT_PROGRAM void calculate_difference()
 {
-	disparity_buffer[launch_index] = make_float3(length(input_buffer_0[launch_index] - input_buffer_1[launch_index]) / 4.f);
+	const float3 diff = input_buffer_0[launch_index] - input_buffer_1[launch_index];
+	difference_buffer[launch_index] = make_float3(dot(diff, diff) / 3.f * 20.f);
 }

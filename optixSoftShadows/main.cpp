@@ -82,7 +82,7 @@ enum
 	BLUR_V_PROGRAM,
 	NORMALIZE_PROGRAM,
 	GROUND_TRUTH_PROGRAM,
-	DISPARITY_PROGRAM,
+	DIFFERENCE_PROGRAM,
 	NUM_PROGRAMS
 };
 
@@ -105,7 +105,7 @@ enum State
 State state = DEFAULT;
 bool animateLight = true;
 bool showMenus = true;
-bool generateDisparityMap = false;
+bool generateDifferenceMap = false;
 bool saveScreenshot = false;
 Scene *scene = 0;
 
@@ -114,7 +114,7 @@ Buffer diffuseBuffer;
 Buffer geometryHitBuffer;
 Buffer geometryNormalBuffer;
 Buffer ffnormalBuffer;
-Buffer disparityBuffer;
+Buffer differenceBuffer;
 Buffer objectIdBuffer;
 Buffer projectedDistancesBuffer;
 Buffer d1Buffer;
@@ -124,6 +124,7 @@ Buffer betaBuffer;
 Buffer blurHBuffer;
 Buffer blurVBuffer;
 Buffer numSamplesBuffer;
+Buffer heatmapBuffer;
 
 //--------------------------------------------------------------
 // Render loop
@@ -157,16 +158,14 @@ void getBufferMinMax(Buffer buffer, float &minValue, float &maxValue, float &avg
 	for(int i = 0; i < w*h; i++) {
 		minValue = std::min(output[i], minValue);
 		maxValue = std::max(output[i], maxValue);
-		if(output[i] > 0.0f) {
-			values.push_back(output[i]);
-		}
+		values.push_back(output[i]);
 	}
 	delete[] output;
 
 	avg = std::accumulate(values.begin(), values.end(), 0.0f) / values.size();
 }
 
-Buffer normalizeBuffer(Buffer buffer)
+Buffer normalizeBuffer(Buffer buffer, bool display = true)
 {
 	// Normalize and display the beta buffer
 	float minValue, maxValue, avgValue;
@@ -175,7 +174,7 @@ Buffer normalizeBuffer(Buffer buffer)
 	context["normalize_buffer"]->set(buffer);
 	context->launch(NORMALIZE_PROGRAM, width, height);
 	
-	sutil::displayBufferGL(buffer);
+	sutil::displayBufferGL(context["heatmap_buffer"]->getBuffer());
 
 	std::vector<std::string> strings;
 	strings.push_back("Min: " + std::to_string(minValue));
@@ -183,7 +182,7 @@ Buffer normalizeBuffer(Buffer buffer)
 	strings.push_back("Avg: " + std::to_string(avgValue));
 	drawStrings(strings, width - 150, 55, 0, -20);
 
-	return buffer;
+	return context["heatmap_buffer"]->getBuffer();
 }
 
 void glutDisplay()
@@ -203,7 +202,7 @@ void glutDisplay()
 	context["blur_h_buffer"]->set(diffuseBuffer);
 
 	Buffer bufferToDisplay; bool alreadyShown = false;
-	switch(generateDisparityMap ? DEFAULT : state)
+	switch(generateDifferenceMap ? DEFAULT : state)
 	{
 		case DEFAULT:
 		{
@@ -274,26 +273,30 @@ void glutDisplay()
 			break;
 	}
 
-	// Show buffer
-	if(!alreadyShown) sutil::displayBufferGL(bufferToDisplay);
-
-	if(generateDisparityMap)
+	if(generateDifferenceMap)
 	{
 		// Render ground truth image
 		context->launch(GROUND_TRUTH_PROGRAM, width, height);
 		
-		// Calculate disparities between ground truth and
-		// filtered image
-		context->launch(DISPARITY_PROGRAM, width, height);
-
+		// Calculate differences between ground truth and filtered image
+		context->launch(DIFFERENCE_PROGRAM, width, height);
+		
 		// Save all three images
 		std::string timeStamp = getTimeStamp();
 		sutil::displayBufferPPM(("screenshots/" + timeStamp + " filtered.ppm").c_str(), context["blur_v_buffer"]->getBuffer());
 		sutil::displayBufferPPM(("screenshots/" + timeStamp + " ground_truth.ppm").c_str(), context["diffuse_buffer"]->getBuffer());
-		sutil::displayBufferPPM(("screenshots/" + timeStamp + " disparity_map.ppm").c_str(), context["disparity_buffer"]->getBuffer());
+		sutil::displayBufferPPM(("screenshots/" + timeStamp + " difference.ppm").c_str(), context["difference_buffer"]->getBuffer());
 
-		// Toggle disparity map generation
-		generateDisparityMap = false;
+		// Toggle difference generation
+		generateDifferenceMap = false;
+	}
+	else
+	{
+		// Show buffer
+		if(!alreadyShown)
+		{
+			sutil::displayBufferGL(bufferToDisplay);
+		}
 	}
 
 	std::string stateName = "MISSING";
@@ -333,7 +336,7 @@ void glutDisplay()
 	topRightInfo.push_back("QE: Up/Down");
 	topRightInfo.push_back("P: Pause Animations");
 	topRightInfo.push_back("M: Toggle Menus");
-	topRightInfo.push_back("O: Generate Disparity Map");
+	topRightInfo.push_back("O: Generate Diff. Map");
 	topRightInfo.push_back("C: Capture Screen");
 	topRightInfo.push_back("1/2: Prev/Next State");
 	drawStrings(topRightInfo, width - 200, height - 15, 0, -20);
@@ -441,7 +444,7 @@ void glutKeyboardUp(unsigned char k, int, int)
 	case 'e': actionState[MOVE_DOWN] = false; break;
 	case 'p': scene->animate = !scene->animate; break;
 	case 'm': showMenus = !showMenus; break;
-	case 'o': generateDisparityMap = true; break;
+	case 'o': generateDifferenceMap = true; break;
 	case 'c': saveScreenshot = true; break;
 	case '2': state = State((state + 1) % NUM_STATES); break;
 	case '1': state = State((state - 1 + NUM_STATES) % NUM_STATES); break;
@@ -474,13 +477,13 @@ int main(int argc, char* argv[])
 		cudaFiles["gaussian_blur"] = loadCudaFile("gaussian_blur.cu");
 		cudaFiles["parallelogram"] = loadCudaFile("parallelogram.cu");
 		cudaFiles["normalize"]     = loadCudaFile("normalize.cu");
-		cudaFiles["calculate_disparity"] = loadCudaFile("calculate_disparity.cu");
+		cudaFiles["calculate_difference"] = loadCudaFile("calculate_difference.cu");
 
 		// Create output buffer
 		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
-		disparityBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
+		differenceBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		geometryHitBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
-		geometryNormalBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);ffnormalBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
+		geometryNormalBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		ffnormalBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		projectedDistancesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT2, width, height, false);
 		objectIdBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
@@ -491,6 +494,7 @@ int main(int argc, char* argv[])
 		blurHBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		blurVBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		numSamplesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
+		heatmapBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 
 		// Set ray generation program
 		context->setRayGenerationProgram(SAMPLE_DISTANCES_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "sample_distances"));
@@ -510,9 +514,6 @@ int main(int argc, char* argv[])
 		// Exception program
 		context->setExceptionProgram(SAMPLE_DISTANCES_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "exception"));
 		context["bad_color"]->setFloat(1.0f, 0.0f, 1.0f);
-
-		// Miss program
-		context->setMissProgram(DISTANCES_RAY, context->createProgramFromPTXString(cudaFiles["main"], "distances_miss"));
 		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
 
 		context->setRayGenerationProgram(GEOMETRY_HIT_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "trace_primary_ray"));
@@ -533,10 +534,11 @@ int main(int argc, char* argv[])
 		// Set normalize program
 		context->setRayGenerationProgram(NORMALIZE_PROGRAM, context->createProgramFromPTXString(cudaFiles["normalize"], "normalize"));
 		context["normalize_buffer"]->set(betaBuffer);
+		context["heatmap_buffer"]->set(heatmapBuffer);
 
 		// Set normalize program
-		context->setRayGenerationProgram(DISPARITY_PROGRAM, context->createProgramFromPTXString(cudaFiles["calculate_disparity"], "calculate_disparity"));
-		context["disparity_buffer"]->set(disparityBuffer);
+		context->setRayGenerationProgram(DIFFERENCE_PROGRAM, context->createProgramFromPTXString(cudaFiles["calculate_difference"], "calculate_difference"));
+		context["difference_buffer"]->set(differenceBuffer);
 		context["input_buffer_0"]->set(blurVBuffer);
 		context["input_buffer_1"]->set(diffuseBuffer);
 

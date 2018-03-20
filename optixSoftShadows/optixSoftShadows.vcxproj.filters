@@ -58,7 +58,7 @@
     <None Include="ground_truth.cu">
       <Filter>CUDA Files</Filter>
     </None>
-    <None Include="calculate_disparity.cu">
+    <None Include="calculate_difference.cu">
       <Filter>CUDA Files</Filter>
     </None>
   </ItemGroup>

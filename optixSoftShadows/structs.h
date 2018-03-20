@@ -6,7 +6,6 @@ using namespace optix;
 
 enum RayTypes
 {
-	DISTANCES_RAY,
 	GEOMETRY_HIT_RAY,
 	SHADOW_RAY,
 	GROUND_TRUTH_RAY,
