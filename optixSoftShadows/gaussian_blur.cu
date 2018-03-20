@@ -7,12 +7,13 @@ using namespace optix;
 //--------------------------------------------------------------
 
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
-rtBuffer<float4, 2> diffuse_buffer;
+rtBuffer<float3, 2> diffuse_buffer;
 rtBuffer<float,  2> beta_buffer;
 rtBuffer<float,  2> object_id_buffer;
 rtBuffer<float2, 2> projected_distances_buffer;
-rtBuffer<float4, 2> blur_h_buffer;
-rtBuffer<float4, 2> blur_v_buffer;
+rtBuffer<float3, 2> blur_h_buffer;
+rtBuffer<float3, 2> blur_v_buffer;
+rtBuffer<float3, 2> geometry_normal_buffer;
 
 float gauss1D(const float x, const float std)
 {
@@ -29,11 +30,12 @@ RT_PROGRAM void blurH()
 	const int kernel_size = 10.f;
 
 	if(beta == 0.f) {
-		blur_h_buffer[launch_index] = make_float4(make_float3(diffuse_buffer[launch_index]), 1.f);
+		blur_h_buffer[launch_index] = diffuse_buffer[launch_index];
 		return;
 	}
 
-	uint object_id = uint(object_id_buffer[launch_index]);
+	float object_id = object_id_buffer[launch_index];
+	float3 geometry_normal = geometry_normal_buffer[launch_index];
 	float3 color = make_float3(0.f);
 	float sum = 0.f;
 	for(int i = -kernel_size; i <= kernel_size; i++)
@@ -46,12 +48,12 @@ RT_PROGRAM void blurH()
 		float2 p = projected_distances_buffer[pos];
 		const float offset = length(center - p);*/
 
-		const float w = gauss1D(i, beta);
-		color += make_float3(diffuse_buffer[pos]) * w;
+		const float w = gauss1D(i, beta) * dot(geometry_normal, geometry_normal_buffer[pos]);
+		color += diffuse_buffer[pos] * w;
 		sum += w;
 	}
 
-	blur_h_buffer[launch_index] = make_float4(color / sum, 1.f);
+	blur_h_buffer[launch_index] = color / sum;
 }
 
 RT_PROGRAM void blurV()
@@ -61,11 +63,12 @@ RT_PROGRAM void blurV()
 	const int kernel_size = 10.f;
 
 	if(beta == 0.f) {
-		blur_v_buffer[launch_index] = make_float4(make_float3(diffuse_buffer[launch_index]), 1.f);
+		blur_v_buffer[launch_index] = diffuse_buffer[launch_index];
 		return;
 	}
-
-	uint object_id = uint(object_id_buffer[launch_index]);
+	
+	float object_id = object_id_buffer[launch_index];
+	float3 geometry_normal = geometry_normal_buffer[launch_index];
 	float3 color = make_float3(0.f);
 	float sum = 0.f;
 	for(int i = -kernel_size; i <= kernel_size; i++)
@@ -77,10 +80,10 @@ RT_PROGRAM void blurV()
 		float2 p = projected_distances_buffer[pos];
 		const float offset = length(center - p) * offset_factor;*/
 
-		const float w = gauss1D(i, beta);
-		color += make_float3(blur_h_buffer[pos]) * w;
+		const float w = gauss1D(i, beta) * dot(geometry_normal, geometry_normal_buffer[pos]);
+		color += blur_h_buffer[pos] * w;
 		sum += w;
 	}
 
-	blur_v_buffer[launch_index] = make_float4(color / sum, 1.f);
+	blur_v_buffer[launch_index] = color / sum;
 }

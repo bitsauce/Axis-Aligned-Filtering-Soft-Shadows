@@ -43,10 +43,14 @@ using namespace optix;
 // Input pixel-coordinate
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 
-rtBuffer<float4, 2> diffuse_buffer;             // Diffuse color buffer
+rtBuffer<float3, 2> diffuse_buffer;             // Diffuse color buffer
 rtBuffer<float,  2> beta_buffer;                // Beta buffer (gaussian standard deviation)
-rtBuffer<float,  2> depth_buffer;               // Depth buffer
+rtBuffer<float,  2> d1_buffer;                  // Distance to light source
+rtBuffer<float,  2> d2_min_buffer;              // Minimum distasnce to occluder
+rtBuffer<float,  2> d2_max_buffer;              // Maximum distasnce to occluder
 rtBuffer<float3, 2> geometry_hit_buffer;        // Geometry hit buffer
+rtBuffer<float3, 2> geometry_normal_buffer;     // Geometry hit buffer
+rtBuffer<float3, 2> ffnormal_buffer;            // For shading
 rtBuffer<float,  2> object_id_buffer;           // Object id buffer
 rtBuffer<float,  2> num_samples_buffer;         // Sample number buffer
 rtBuffer<float2, 2> projected_distances_buffer; // Projected distances buffer (offset of screen-space gaussian)
@@ -62,47 +66,25 @@ rtDeclareVariable(float3, W,   , );
 
 rtDeclareVariable(Ray, ray, rtCurrentRay, );
 rtDeclareVariable(PerRayData_geometry_hit, prd_geometry_hit, rtPayload, );
-rtDeclareVariable(PerRayData_diffuse, prd_diffuse, rtPayload, );
+rtDeclareVariable(PerRayData_distances, prd_distances, rtPayload, );
+rtDeclareVariable(PerRayData_adaptive, prd_adaptive, rtPayload, );
 rtDeclareVariable(PerRayData_shadow, prd_shadow, rtPayload, );
 
 // Light sources
 rtBuffer<ParallelogramLight> lights;
 
-//--------------------------------------------------------------
-// Main ray program
-//--------------------------------------------------------------
-
-RT_PROGRAM void trace_ray()
-{
-	size_t2 screen = diffuse_buffer.size(); // Screen size
-	float2 d = make_float2(launch_index) / make_float2(screen) * 2.f - 1.f; // Pixel coordinate in [-1, 1]
-	float3 ray_origin = eye;
-	float3 ray_direction = normalize(d.x*U + d.y*V + W);
-
-	// Create ray from camera into scene
-	Ray ray(ray_origin, ray_direction, DIFFUSE_RAY, EPSILON);
-
-	// Per radiance data
-	PerRayData_diffuse prd;
-	prd.seed = tea<16>(screen.x*launch_index.y + launch_index.x, 0/*frame_number*/);
-	prd.beta = 0.f;
-
-	// Trace geometry
-	rtTrace(scene_geometry, ray, prd);
-
-	// Set resulting diffuse color and beta
-	diffuse_buffer[launch_index] = make_float4(prd.color, 1.f);
-	beta_buffer[launch_index] = prd.beta;
-	projected_distances_buffer[launch_index] = prd.projected_distance;
-	object_id_buffer[launch_index] = prd.object_id;
-	num_samples_buffer[launch_index] = prd.num_samples;
-}
+// Geometry hit variables
+rtDeclareVariable(float3, geometric_normal, attribute geometric_normal, );
+rtDeclareVariable(float3, shading_normal, attribute shading_normal, );
+rtDeclareVariable(float3, diffuse_color, , );
+rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
+rtDeclareVariable(uint, object_id, , );
 
 //--------------------------------------------------------------
-// Geometry hit ray program
+// Primary ray pass
 //--------------------------------------------------------------
 
-RT_PROGRAM void trace_geometry_hit()
+RT_PROGRAM void trace_primary_ray()
 {
 	size_t2 screen = diffuse_buffer.size(); // Screen size
 	float2 d = make_float2(launch_index) / make_float2(screen) * 2.f - 1.f; // Pixel coordinate in [-1, 1]
@@ -114,39 +96,43 @@ RT_PROGRAM void trace_geometry_hit()
 
 	// Per radiance data
 	PerRayData_geometry_hit prd;
+	prd.color = make_float3(0.f);
+	prd.object_id = 0;
 	prd.geometry_hit = make_float3(0.f);
-	prd.depth = 0.0f;
+	prd.geometry_normal = make_float3(0.f);
+	prd.ffnormal = make_float3(0.f);
 
 	// Trace geometry
 	rtTrace(scene_geometry, ray, prd);
 
 	// Set resulting geometry hit coordinate
+	diffuse_buffer[launch_index] = prd.color;
+	object_id_buffer[launch_index] = prd.object_id;
 	geometry_hit_buffer[launch_index] = prd.geometry_hit;
-	depth_buffer[launch_index] = prd.depth;
+	geometry_normal_buffer[launch_index] = prd.geometry_normal;
+	ffnormal_buffer[launch_index] = prd.ffnormal;
 }
-
-//-----------------------------------------------------------------------------
-// Lambertian surface closest-hit
-//-----------------------------------------------------------------------------
-
-rtDeclareVariable(float3, geometric_normal, attribute geometric_normal, );
-rtDeclareVariable(float3, shading_normal, attribute shading_normal, );
-rtDeclareVariable(float3, diffuse_color, , );
-rtDeclareVariable(float3, Ka, , );
-rtDeclareVariable(float3, Ks, , );
-rtDeclareVariable(float, phong_exp, , );
-rtDeclareVariable(float3, Kd, , );
-rtDeclareVariable(float3, ambient_light_color, , );
-rtDeclareVariable(float, t_hit, rtIntersectionDistance, );
-rtDeclareVariable(uint, object_id, , );
 
 RT_PROGRAM void sample_geometry_hit()
 {
-	prd_geometry_hit.geometry_hit = ray.origin + t_hit * ray.direction;
-	prd_geometry_hit.depth = length(prd_geometry_hit.geometry_hit - ray.origin);
+	float3 world_geo_normal = normalize(rtTransformNormal(RT_OBJECT_TO_WORLD, geometric_normal));
+	float3 world_shade_normal = normalize(rtTransformNormal(RT_OBJECT_TO_WORLD, shading_normal));
+	float3 ffnormal = faceforward(world_shade_normal, -ray.direction, world_geo_normal);
+	float3 hit_point = ray.origin + t_hit * ray.direction;
+
+	prd_geometry_hit.color = diffuse_color;
+	prd_geometry_hit.object_id = float(object_id);
+	prd_geometry_hit.geometry_hit = hit_point;
+	prd_geometry_hit.geometry_normal = world_geo_normal;
+	prd_geometry_hit.ffnormal = ffnormal;
 }
 
-RT_PROGRAM void sample_distances(unsigned int& seed, float3 &color, ParallelogramLight light, float3 ffnormal, float3 hit_point, float& d2_min, float& d2_max)
+//--------------------------------------------------------------
+// Distance sampling + adaptive sampling
+//--------------------------------------------------------------
+
+RT_PROGRAM void sample_distances_to_light(unsigned int& seed, float3 &color, ParallelogramLight light,
+										  float3 ffnormal, float3 hit_point, float& d2_min, float& d2_max)
 {
 	// Choose random point on light
 	const float z1 = rnd(seed);
@@ -157,7 +143,6 @@ RT_PROGRAM void sample_distances(unsigned int& seed, float3 &color, Parallelogra
 	float nDl = dot(ffnormal, L);
 	if(nDl > 0.0f) // Check if light is behind
 	{
-		// TODO: Maybe d1 should be average of these?
 		float Ldist = length(light_pos - hit_point);
 
 		// Cast shadow ray
@@ -168,38 +153,46 @@ RT_PROGRAM void sample_distances(unsigned int& seed, float3 &color, Parallelogra
 		rtTrace(scene_geometry, shadow_ray, shadow_prd);
 
 		// If light source was occluded
-		if (shadow_prd.hit)
+		if(shadow_prd.hit)
 		{
 			const float d2 = length(shadow_prd.hit_point - light_pos);
 
 			// Store min d2
-			if (d2 < d2_min)
+			if(d2 < d2_min)
 			{
 				d2_min = d2;
 			}
 
 			// Store max d2
-			if (d2 > d2_max)
+			if(d2 > d2_max)
 			{
 				d2_max = d2;
 			}
 		}
 		else
 		{
-			color += Kd * nDl * diffuse_color;
+			const float3 Kd = make_float3(0.6f, 0.7f, 0.8f);
+			color += Kd * nDl * diffuse_buffer[launch_index];
 		}
 	}
 }
 
-RT_PROGRAM void diffuse()
-{
-	float3 world_geo_normal = normalize(rtTransformNormal(RT_OBJECT_TO_WORLD, geometric_normal));
-	float3 world_shade_normal = normalize(rtTransformNormal(RT_OBJECT_TO_WORLD, shading_normal));
-	float3 ffnormal = faceforward(world_shade_normal, -ray.direction, world_geo_normal);
-	float3 color = Ka * ambient_light_color;
-	float3 hit_point = ray.origin + t_hit * ray.direction;
+// Constants from the paper
+const float k = 3.f;
+const float alpha = 1.f;
+const float mu = 2.f;
+const float max_num_samples = 100.f;
 
+// Standard deviation of Gaussian of the light
+const float sigma = 130.f / 2.f;
+
+RT_PROGRAM void sample_distances()
+{
 	size_t2 screen = geometry_hit_buffer.size();
+	float3 ffnormal = ffnormal_buffer[launch_index];
+	float3 hit_point = geometry_hit_buffer[launch_index];
+
+	// Calculate projected distance per pixel
 	float d = 0.f;
 	if(launch_index.x > 0)        d += length(geometry_hit_buffer[make_uint2(launch_index.x - 1, launch_index.y)] - hit_point);
 	if(launch_index.y > 0)        d += length(geometry_hit_buffer[make_uint2(launch_index.x, launch_index.y - 1)] - hit_point);
@@ -208,19 +201,21 @@ RT_PROGRAM void diffuse()
 	d /= 4.f;
 	const float omega_max_pix = 1.f / d;
 
-	unsigned int seed = prd_diffuse.seed;
+	float3 color = make_float3(0.0f);
+	unsigned int seed = tea<16>(screen.x*launch_index.y + launch_index.x, 0/*frame_number*/);
 	for(int i = 0; i < lights.size(); ++i)
 	{
 		ParallelogramLight light = lights[i];
 		const float3 light_center = light.corner + light.v1 * 0.5f + light.v2 * 0.5f;
 
+		// Calculate distances parallel to the light source
+		// (used as a offset in the gaussian blur)
 		Matrix3x3 projection_matrix;
 		projection_matrix.setCol(0, light.v1);
 		projection_matrix.setCol(1, light.v2);
 		projection_matrix.setCol(2, light.normal);
-
 		float3 p_projected = projection_matrix * hit_point;
-		prd_diffuse.projected_distance = make_float2(p_projected);
+		projected_distances_buffer[launch_index] = make_float2(p_projected);
 
 		// Send 9 rays
 		float d2_min = FLT_MAX;  // Min distance from light to occluder
@@ -228,60 +223,112 @@ RT_PROGRAM void diffuse()
 		float d1 = length(hit_point - light_center); // Distance from light to receiver
 		for(int j = 0; j < 9; j++)
 		{
-			sample_distances(seed, color, light, ffnormal, hit_point, d2_min, d2_max);
+			sample_distances_to_light(seed, color, light, ffnormal, hit_point, d2_min, d2_max);
 		}
-
-		// Constants from the paper
-		const float k = 3.f;
-		const float alpha = 1.f;
-		const float mu = 2.f;
-		const float max_num_samples = 50.f;
-
-		// Standard deviation of Gaussian of the light
-		// TODO: Experiment with different sigmas
-		const float sigma = 130.f / 2.f;
 
 		// If this pixel was occluded (that is, d2_max > 0)
 		if(d2_max > 0.f)
 		{
 			const float s1 = max(d1 / d2_min, 1.f) - 1.f;
-			const float s2 = max(d1 / d2_max, 1.f) - 1.f;
-			const float inv_s2 = alpha / (1.f + s2);
+			float s2 = max(d1 / d2_max, 1.f) - 1.f;
+			float inv_s2 = alpha / (1.f + s2);
 
 			// Calculate pixel area and light area
 			const float Ap = 1.f / (omega_max_pix * omega_max_pix);
 			const float Al = 4.f * sigma * sigma;
 
 			// Calcuate number of additional samples
-			const float num_samples = min(4.f * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + inv_s2, 2.f), 100.f);
-			prd_diffuse.num_samples = num_samples;
+			const float num_samples = min(4.f * powf(1.f + mu * (s1 / s2), 2.f) * powf(mu * 2 / s2 * sqrtf(Ap / Al) + inv_s2, 2.f), max_num_samples);
+			num_samples_buffer[launch_index] = num_samples;
 
 			for(int j = 0; j < (int)num_samples; j++)
 			{
-				sample_distances(seed, color, light, ffnormal, hit_point, d2_min, d2_max);
+				sample_distances_to_light(seed, color, light, ffnormal, hit_point, d2_min, d2_max);
 			}
 
-			{
-				const float s2 = max(d1 / d2_max, 1.f) - 1.f;
-				const float inv_s2 = alpha / (1.f + s2);
-				const float omega_max_x = inv_s2 * omega_max_pix;
-
-				// Calculate filter width at current pixel
-				const float beta = 1.f / k * 1.f / mu * max(sigma * s2, 1.f / omega_max_x);
-				prd_diffuse.beta = beta;
-			}
-
-			color /= float(int(num_samples) + 9.f);
+			color /= 9.f + num_samples;
 		}
 		else
 		{
-			prd_diffuse.beta = 10.f;
-			prd_diffuse.num_samples = 0.f;
+			// Set values for unoccluded pixels
+			num_samples_buffer[launch_index] = 0.f;
 			color /= 9.f;
+			d1 = d2_min = d2_max = 0.f;
 		}
+
+		// Set sampled distances
+		d1_buffer[launch_index] = d1;
+		d2_min_buffer[launch_index] = d2_min;
+		d2_max_buffer[launch_index] = d2_max;
 	}
-	prd_diffuse.color = color;
-	prd_diffuse.object_id = float(object_id);
+
+	// Set sampled color
+	diffuse_buffer[launch_index] = color;
+}
+
+//-----------------------------------------------------------------------------
+// Calculate beta
+//-----------------------------------------------------------------------------
+
+RT_PROGRAM void calculate_beta()
+{
+	// Calculate projected distance per pixel
+	size_t2 screen = geometry_hit_buffer.size();
+	float3 hit_point = geometry_hit_buffer[launch_index];
+	float d = 0.f;
+	if(launch_index.x > 0)        d += length(geometry_hit_buffer[make_uint2(launch_index.x - 1, launch_index.y)] - hit_point);
+	if(launch_index.y > 0)        d += length(geometry_hit_buffer[make_uint2(launch_index.x, launch_index.y - 1)] - hit_point);
+	if(launch_index.x < screen.x) d += length(geometry_hit_buffer[make_uint2(launch_index.x + 1, launch_index.y)] - hit_point);
+	if(launch_index.y < screen.y) d += length(geometry_hit_buffer[make_uint2(launch_index.x, launch_index.y + 1)] - hit_point);
+	d /= 4.f;
+	const float omega_max_pix = 1.f / d;
+
+	// Get d1, d2_max from previous pass
+	float d2_max = d2_max_buffer[launch_index];
+	float d1 = d1_buffer[launch_index];
+
+	// For unocculded pixel, take the average in a 5 pixel radius
+	if(d2_max == 0.f)
+	{
+		float sum = 0.f;
+		for(int i = -5; i <= 5; i++)
+		{
+			for(int j = -5; j <= 5; j++)
+			{
+				const uint2 pos = make_uint2(launch_index.x + j, launch_index.y + i);
+				if(pos.x >= screen.x || pos.y >= screen.y) continue;
+				d1 += d1_buffer[pos];
+				d2_max += d2_max_buffer[pos];
+				sum += 1.f;
+			}
+		}
+
+		// Get average
+		d1 /= sum;
+		d2_max /= sum;
+
+		// Write back (for debug visualization)
+		//d1_buffer[launch_index] = d1;
+		//d2_max_buffer[launch_index] = d2_max;
+	}
+
+	// Make sure we can calculate beta
+	if(d2_max > 0.f)
+	{
+		// Update s2 and inv_s2
+		const float s2 = max(d1 / d2_max, 1.f) - 1.f;
+		const float inv_s2 = alpha / (1.f + s2);
+		const float omega_max_x = inv_s2 * omega_max_pix;
+
+		// Calculate filter width at current pixel
+		const float beta = 1.f / k * 1.f / mu * max(sigma * s2, 1.f / omega_max_x);
+		beta_buffer[launch_index] = min(beta, 10.f);
+	}
+	else
+	{
+		// Pixel still unoccluded
+		beta_buffer[launch_index] = 0.f;
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -301,11 +348,11 @@ RT_PROGRAM void shadow()
 
 rtDeclareVariable(float3, bg_color,,);
 
-RT_PROGRAM void miss()
+RT_PROGRAM void distances_miss()
 {
-	prd_diffuse.color = bg_color;
-	prd_diffuse.object_id = 0.f;
-	prd_diffuse.num_samples = 0.f;
+	prd_distances.color = bg_color;
+	prd_distances.projected_distance = make_float2(0.f);
+	prd_distances.d1 = prd_distances.d2_min = prd_distances.d2_max = 0.f;
 }
 
 //--------------------------------------------------------------
@@ -316,8 +363,9 @@ rtDeclareVariable(float3, bad_color,,);
 
 RT_PROGRAM void exception()
 {
-	diffuse_buffer[launch_index] = make_float4(bad_color, 1.f);
+	diffuse_buffer[launch_index] = bad_color;
 	beta_buffer[launch_index] = 0.f;
 	object_id_buffer[launch_index] = 0.f;
 	num_samples_buffer[launch_index] = 0.f;
+	geometry_normal_buffer[launch_index] = make_float3(0.f);
 }

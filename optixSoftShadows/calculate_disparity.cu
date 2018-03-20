@@ -9,11 +9,11 @@ using namespace optix;
 //--------------------------------------------------------------
 
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
-rtBuffer<float4, 2> input_buffer_0;
-rtBuffer<float4, 2> input_buffer_1;
-rtBuffer<float4, 2> disparity_buffer;
+rtBuffer<float3, 2> input_buffer_0;
+rtBuffer<float3, 2> input_buffer_1;
+rtBuffer<float3, 2> disparity_buffer;
 
 RT_PROGRAM void calculate_disparity()
 {
-	disparity_buffer[launch_index] = make_float4(make_float3(length(input_buffer_0[launch_index] - input_buffer_1[launch_index]) / 4.f), 1.f);
+	disparity_buffer[launch_index] = make_float3(length(input_buffer_0[launch_index] - input_buffer_1[launch_index]) / 4.f);
 }

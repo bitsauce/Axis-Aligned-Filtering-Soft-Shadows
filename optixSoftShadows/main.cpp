@@ -31,7 +31,8 @@
 #include "structs.h"
 #include "scenes.h"
 
-#define SCENE_CLASS GridScene
+#define SCENE_CLASS DefaultScene
+//#define SCENE_CLASS GridScene
 
 Context context = 0;
 const int width = 1280, height = 720;
@@ -74,8 +75,9 @@ bool actionState[ACTION_COUNT];
 // CUDA programs
 enum
 {
-	DIFFUSE_PROGRAM,
 	GEOMETRY_HIT_PROGRAM,
+	SAMPLE_DISTANCES_PROGRAM,
+	CALCULATE_BETA_PROGRAM,
 	BLUR_H_PROGRAM,
 	BLUR_V_PROGRAM,
 	NORMALIZE_PROGRAM,
@@ -89,10 +91,11 @@ enum State
 {
 	DEFAULT,
 	SHOW_DIFFUSE,
-	SHOW_DEPTH,
-	SHOW_OBJECT_IDS,
 	SHOW_H_BLUR,
 	SHOW_V_BLUR,
+	SHOW_D1,
+	SHOW_D2_MIN,
+	SHOW_D2_MAX,
 	SHOW_BETA,
 	SHOW_NUM_SAMPLES,
 	NUM_STATES
@@ -109,10 +112,14 @@ Scene *scene = 0;
 // CUDA buffers
 Buffer diffuseBuffer;
 Buffer geometryHitBuffer;
+Buffer geometryNormalBuffer;
+Buffer ffnormalBuffer;
 Buffer disparityBuffer;
-Buffer depthBuffer;
 Buffer objectIdBuffer;
 Buffer projectedDistancesBuffer;
+Buffer d1Buffer;
+Buffer d2MinBuffer;
+Buffer d2MaxBuffer;
 Buffer betaBuffer;
 Buffer blurHBuffer;
 Buffer blurVBuffer;
@@ -187,8 +194,11 @@ void glutDisplay()
 	// Sample geometry hits
 	context->launch(GEOMETRY_HIT_PROGRAM, width, height);
 
-	// Render diffuse image
-	context->launch(DIFFUSE_PROGRAM, width, height);
+	// Sample distance values (and diffuse color)
+	context->launch(SAMPLE_DISTANCES_PROGRAM, width, height);
+
+	// Calculate beta
+	context->launch(CALCULATE_BETA_PROGRAM, width, height);
 
 	context["blur_h_buffer"]->set(diffuseBuffer);
 
@@ -209,20 +219,6 @@ void glutDisplay()
 		}
 		break;
 
-		case SHOW_DEPTH:
-		{
-			bufferToDisplay = normalizeBuffer(context["depth_buffer"]->getBuffer());
-			alreadyShown = true;
-		}
-		break;
-
-		case SHOW_OBJECT_IDS:
-		{
-			bufferToDisplay = normalizeBuffer(context["object_id_buffer"]->getBuffer());
-			alreadyShown = true;
-		}
-		break;
-
 		case SHOW_H_BLUR:
 		{
 			context->launch(BLUR_H_PROGRAM, width, height);
@@ -235,6 +231,27 @@ void glutDisplay()
 			context["blur_h_buffer"]->set(diffuseBuffer);
 			context->launch(BLUR_V_PROGRAM, width, height);
 			bufferToDisplay = context["blur_v_buffer"]->getBuffer();
+		}
+		break;
+
+		case SHOW_D1:
+		{
+			bufferToDisplay = normalizeBuffer(context["d1_buffer"]->getBuffer());
+			alreadyShown = true;
+		}
+		break;
+
+		case SHOW_D2_MIN:
+		{
+			bufferToDisplay = normalizeBuffer(context["d2_min_buffer"]->getBuffer());
+			alreadyShown = true;
+		}
+		break;
+
+		case SHOW_D2_MAX:
+		{
+			bufferToDisplay = normalizeBuffer(context["d2_max_buffer"]->getBuffer());
+			alreadyShown = true;
 		}
 		break;
 
@@ -284,10 +301,11 @@ void glutDisplay()
 	{
 		case DEFAULT: stateName = "Soft Shadows"; break;
 		case SHOW_DIFFUSE: stateName = "Diffuse"; break;
-		case SHOW_DEPTH: stateName = "Depth"; break;
-		case SHOW_OBJECT_IDS: stateName = "Object IDs"; break;
 		case SHOW_H_BLUR: stateName = "Blur H"; break;
 		case SHOW_V_BLUR: stateName = "Blur V"; break;
+		case SHOW_D1: stateName = "d1"; break;
+		case SHOW_D2_MIN: stateName = "d2 min"; break;
+		case SHOW_D2_MAX: stateName = "d2 max"; break;
 		case SHOW_BETA: stateName = "Beta"; break;
 		case SHOW_NUM_SAMPLES: stateName = "Num Samples"; break;
 	}
@@ -321,6 +339,7 @@ void glutDisplay()
 	drawStrings(topRightInfo, width - 200, height - 15, 0, -20);
 
 	glutSwapBuffers();
+	context->validate();
 }
 
 //--------------------------------------------------------------
@@ -458,37 +477,47 @@ int main(int argc, char* argv[])
 		cudaFiles["calculate_disparity"] = loadCudaFile("calculate_disparity.cu");
 
 		// Create output buffer
-		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
-		disparityBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		diffuseBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
+		disparityBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		geometryHitBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
-		depthBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
-		projectedDistancesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT2, width, height, true);
-		objectIdBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT/*UNSIGNED_INT*/, width, height, false);
+		geometryNormalBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);ffnormalBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
+		ffnormalBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
+		projectedDistancesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT2, width, height, false);
+		objectIdBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
+		d1Buffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
+		d2MinBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
+		d2MaxBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 		betaBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
-		blurHBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
-		blurVBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT4, width, height, true);
+		blurHBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
+		blurVBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT3, width, height, false);
 		numSamplesBuffer = sutil::createOutputBuffer(context, RT_FORMAT_FLOAT, width, height, false);
 
 		// Set ray generation program
-		context->setRayGenerationProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "trace_ray"));
+		context->setRayGenerationProgram(SAMPLE_DISTANCES_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "sample_distances"));
 		context["diffuse_buffer"]->set(diffuseBuffer);
 		context["beta_buffer"]->set(betaBuffer);
-		context["depth_buffer"]->set(depthBuffer);
+		context["d1_buffer"]->set(d1Buffer);
+		context["d2_min_buffer"]->set(d2MinBuffer);
+		context["d2_max_buffer"]->set(d2MaxBuffer);
+		context["ffnormal_buffer"]->set(ffnormalBuffer);
 		context["object_id_buffer"]->set(objectIdBuffer);
 		context["projected_distances_buffer"]->set(projectedDistancesBuffer);
 		context["num_samples_buffer"]->set(numSamplesBuffer);
 
+		// Set calculate beta program
+		context->setRayGenerationProgram(CALCULATE_BETA_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "calculate_beta"));
+
 		// Exception program
-		context->setExceptionProgram(DIFFUSE_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "exception"));
+		context->setExceptionProgram(SAMPLE_DISTANCES_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "exception"));
 		context["bad_color"]->setFloat(1.0f, 0.0f, 1.0f);
 
 		// Miss program
-		context->setMissProgram(DIFFUSE_RAY, context->createProgramFromPTXString(cudaFiles["main"], "miss"));
+		context->setMissProgram(DISTANCES_RAY, context->createProgramFromPTXString(cudaFiles["main"], "distances_miss"));
 		context["bg_color"]->setFloat(make_float3(0.34f, 0.55f, 0.85f));
 
-
-		context->setRayGenerationProgram(GEOMETRY_HIT_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "trace_geometry_hit"));
+		context->setRayGenerationProgram(GEOMETRY_HIT_PROGRAM, context->createProgramFromPTXString(cudaFiles["main"], "trace_primary_ray"));
 		context["geometry_hit_buffer"]->setBuffer(geometryHitBuffer);
+		context["geometry_normal_buffer"]->setBuffer(geometryNormalBuffer);
 
 		// Set ray generation program
 		context->setRayGenerationProgram(GROUND_TRUTH_PROGRAM, context->createProgramFromPTXString(cudaFiles["ground_truth"], "trace_ray"));

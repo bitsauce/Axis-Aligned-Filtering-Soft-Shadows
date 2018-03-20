@@ -43,7 +43,7 @@ using namespace optix;
 // Input pixel-coordinate
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 
-rtBuffer<float4, 2> diffuse_buffer;             // Diffuse color buffer
+rtBuffer<float3, 2> diffuse_buffer;             // Diffuse color buffer
 
 // Scene geometry objects
 rtDeclareVariable(rtObject, scene_geometry, , );
@@ -86,7 +86,7 @@ RT_PROGRAM void trace_ray()
 	rtTrace(scene_geometry, ray, prd);
 
 	// Set resulting diffuse color and beta
-	diffuse_buffer[launch_index] = make_float4(prd.color, 1.f);
+	diffuse_buffer[launch_index] = prd.color;
 }
 
 //-----------------------------------------------------------------------------
@@ -192,5 +192,5 @@ rtDeclareVariable(float3, bad_color,,);
 
 RT_PROGRAM void exception()
 {
-	diffuse_buffer[launch_index] = make_float4(bad_color, 1.f);
+	diffuse_buffer[launch_index] = bad_color;
 }

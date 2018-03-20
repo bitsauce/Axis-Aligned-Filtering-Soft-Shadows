@@ -24,7 +24,7 @@ DefaultScene::DefaultScene()
 
 	// Material
 	Material diffuse = context->createMaterial();
-	diffuse->setClosestHitProgram(DIFFUSE_RAY, context->createProgramFromPTXString(cudaFiles["main"], "diffuse"));
+	//diffuse->setClosestHitProgram(DISTANCES_RAY, context->createProgramFromPTXString(cudaFiles["main"], "distance_sampling_hit"));
 	diffuse->setClosestHitProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(cudaFiles["ground_truth"], "diffuse"));
 	diffuse->setClosestHitProgram(GEOMETRY_HIT_RAY, context->createProgramFromPTXString(cudaFiles["main"], "sample_geometry_hit"));
 	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(cudaFiles["main"], "shadow"));
@@ -45,36 +45,36 @@ DefaultScene::DefaultScene()
 
 	// Floor
 	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f),
-									  make_float3(556.0f, 0.0f, 0.0f),
+									  make_float3(0.0f, 0.0f, 560.0f),
+									  make_float3(560.0f, 0.0f, 0.0f),
 									  diffuse,
 									  white));
 
 	// Ceiling
-	gis.push_back(createParallelogram(make_float3(0.0f, 548.8f, 0.0f),
-									  make_float3(556.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f),
+	gis.push_back(createParallelogram(make_float3(0.0f, 560.0f, 0.0f),
+									  make_float3(560.0f, 0.0f, 0.0f),
+									  make_float3(0.0f, 0.0f, 560.0f),
 									  diffuse,
 									  white));
 
 	// Back wall
-	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 559.2f),
-									  make_float3(0.0f, 548.8f, 0.0f),
-									  make_float3(556.0f, 0.0f, 0.0f),
+	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 560.0f),
+									  make_float3(0.0f, 560.0f, 0.0f),
+									  make_float3(560.0f, 0.0f, 0.0f),
 									  diffuse,
 									  white));
 
 	// Right wall
 	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 548.8f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f),
+									  make_float3(0.0f, 560.0f, 0.0f),
+									  make_float3(0.0f, 0.0f, 560.0f),
 									  diffuse,
 									  green));
 
 	// Left wall
-	gis.push_back(createParallelogram(make_float3(556.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 559.2f),
-									  make_float3(0.0f, 548.8f, 0.0f),
+	gis.push_back(createParallelogram(make_float3(560.0f, 0.0f, 0.0f),
+									  make_float3(0.0f, 0.0f, 560.0f),
+									  make_float3(0.0f, 560.0f, 0.0f),
 									  diffuse,
 									  red));
 
@@ -158,7 +158,7 @@ void DefaultScene::update()
 GridScene::GridScene()
 {
 	// Setup light
-	light.corner = make_float3(343.0f, 520.0f, 227.0f);
+	light.corner = make_float3(400.0f, 520.0f, 500.0f);
 	light.v1 = make_float3(-130.0f, 0.0f, 0.0f);
 	light.v2 = make_float3(0.0f, 0.0f, 130.0f);
 	light.normal = normalize(cross(light.v1, light.v2));
@@ -174,7 +174,7 @@ GridScene::GridScene()
 
 	// Material
 	Material diffuse = context->createMaterial();
-	diffuse->setClosestHitProgram(DIFFUSE_RAY, context->createProgramFromPTXString(cudaFiles["main"], "diffuse"));
+	//diffuse->setClosestHitProgram(DISTANCES_RAY, context->createProgramFromPTXString(cudaFiles["main"], "distance_sampling_hit"));
 	diffuse->setClosestHitProgram(GROUND_TRUTH_RAY, context->createProgramFromPTXString(cudaFiles["ground_truth"], "diffuse"));
 	diffuse->setClosestHitProgram(GEOMETRY_HIT_RAY, context->createProgramFromPTXString(cudaFiles["main"], "sample_geometry_hit"));
 	diffuse->setAnyHitProgram(SHADOW_RAY, context->createProgramFromPTXString(cudaFiles["main"], "shadow"));
@@ -195,42 +195,14 @@ GridScene::GridScene()
 
 	// Floor
 	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 560.0f),
-									  make_float3(560.0f, 0.0f, 0.0f),
+									  make_float3(0.0f, 0.0f, 1000.0f),
+									  make_float3(1000.0f, 0.0f, 0.0f),
 									  diffuse,
-									  white));
-
-	// Ceiling
-	gis.push_back(createParallelogram(make_float3(0.0f, 560.0f, 0.0f),
-									  make_float3(560.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 560.0f),
-									  diffuse,
-									  white));
-
-	// Back wall
-	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 560.0f),
-									  make_float3(0.0f, 560.0f, 0.0f),
-									  make_float3(560.0f, 0.0f, 0.0f),
-									  diffuse,
-									  white));
-
-	// Right wall
-	gis.push_back(createParallelogram(make_float3(0.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 560.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 560.0f),
-									  diffuse,
-									  green));
-
-	// Left wall
-	gis.push_back(createParallelogram(make_float3(560.0f, 0.0f, 0.0f),
-									  make_float3(0.0f, 0.0f, 560.0f),
-									  make_float3(0.0f, 560.0f, 0.0f),
-									  diffuse,
-									  red));
+									  make_float3(0.8f, 0.8f, 0.5f)));
 
 	// Load mesh
-	Matrix4x4 matrix = Matrix4x4::translate(make_float3(280, 0, 280)) * Matrix4x4::scale(make_float3(2000, 2000, 2000));
-	gis.push_back(loadMesh("meshes/cow.obj", diffuse, white, matrix));
+	Matrix4x4 matrix = Matrix4x4::translate(make_float3(500, 100, 500)) * Matrix4x4::scale(make_float3(20, 20, 20)) * Matrix4x4::rotate(35, make_float3(1.0f, 0.0f, 0.0f)) * Matrix4x4::rotate(15, make_float3(0.0f, 1.0f, 0.0f));
+	gis.push_back(loadMesh("meshes/grid.obj", diffuse, white, matrix));
 
 	// Create geometry group
 	GeometryGroup geometry_group = context->createGeometryGroup(gis.begin(), gis.end());
@@ -240,7 +212,7 @@ GridScene::GridScene()
 
 void GridScene::update()
 {
-	if(animate)
+	/*if(animate)
 	{
 		light.corner = make_float3(343.0f + cos(glutGet(GLUT_ELAPSED_TIME) / 1000.f) * 100.f,
 								   520.0f,
@@ -248,5 +220,5 @@ void GridScene::update()
 		memcpy(lightBuffer->map(), &light, sizeof(light));
 		lightBuffer->unmap();
 		context["lights"]->setBuffer(lightBuffer);
-	}
+	}*/
 }
