@@ -309,7 +309,7 @@ RT_PROGRAM void blur_d_h()
 		{
 			const uint2 pos = make_uint2(launch_index.x + i, launch_index.y);
 			if(pos.x >= screen.x) continue;
-			const float w = gauss1D(i, 3.f);
+			const float w = gauss1D(i, 5.f);
 			d1 += d1_buffer[pos] * w;
 			d2_max += d2_max_buffer[pos] * w;
 			sum += w;
@@ -353,7 +353,7 @@ RT_PROGRAM void calculate_beta()
 		{
 			const uint2 pos = make_uint2(launch_index.x, launch_index.y + i);
 			if(pos.y >= screen.y) continue;
-			const float w = gauss1D(i, 3.f);
+			const float w = gauss1D(i, 5.f);
 			d1 += d1_buffer[pos] * w;
 			d2_max += d2_max_buffer[pos] * w;
 			sum += w;

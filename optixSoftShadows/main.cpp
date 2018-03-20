@@ -31,8 +31,8 @@
 #include "structs.h"
 #include "scenes.h"
 
-//#define SCENE_CLASS DefaultScene
-#define SCENE_CLASS GridScene
+#define SCENE_CLASS DefaultScene
+//#define SCENE_CLASS GridScene
 
 Context context = 0;
 const int width = 1280, height = 720;
