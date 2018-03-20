@@ -3,7 +3,7 @@
 
 ## Background
 
-This project details our implementation soft shadows based on the paper [*Axis-Aligned Filtering for Interactive Sampled Soft Shadows*](http://graphics.berkeley.edu/papers/UdayMehta-AAF-2012-12/) by Soham Uday Mehta, Brandon Wang, and Ravi Ramamoorthi. The paper  describes a way of approximating Monte Carlo based soft shadows, by analysing the Fourier spectrum of the occlusion function, and thereby doing smart sampling and reconstruction of the shadows. Here's a quick summary of the method:
+This page details our implementation of soft shadows based on the paper [*Axis-Aligned Filtering for Interactive Sampled Soft Shadows*](http://graphics.berkeley.edu/papers/UdayMehta-AAF-2012-12/) by Soham Uday Mehta, Brandon Wang, and Ravi Ramamoorthi. The paper describes a method based on Monte Carlo rendering which approximates soft shadows, by analysing the Fourier spectrum of the occlusion function, and thereby doing smart sampling and reconstruction of the shadows. Here's a quick summary of the method:
 
 <p align="center">
   <img src="figures/Occlusion_Spectrum_Figure.png">
@@ -56,7 +56,7 @@ After obtaining our values of _d2_, we go 2D an gaussian average over _d1_ and _
 Now we can finally calculate the standard deviation of the gaussian blur which is to be applied over the screen. This value is given by the following formula:
 
 <p align="center">
-  <img src="figures/beta_formula.png">
+  <img src="figures/beta_formula.PNG">
 </p>
 
 Below is a visualization of the betas we obtained:
