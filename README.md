@@ -85,6 +85,10 @@ Finally, we separate the gaussian blur a horizontal pass and a vertical pass. To
 
 As of this time, we had quite decent results, and we held a presentation of our project in class. Our filtering used gaussian offsets corresponding to image-space pixel positions. We had started writing code for world-space based gaussian offsets, but it wasn't complete, so we continued to work on this. In the filter passes, we used the distance between the center pixel and the neighboring pixels' light-parallel positions as gaussian offsets, in accordance to the theory of the paper. Surprisingly enough, the results we obtained were nearly identical to the results from the original image-space offsets, also when comparing the disparity maps. So you could skip this step and use the image-space offsets to get a small performance boost, but this might also cause you to run into artefacts under certain scenarios as it is not as physically accurate as the world-space based offsets.
 
+In addition to this, we added some new models to better test self-shadowing and complex shadows. We extended our filter's object ID check to also compare normals; each sample is required to be within a specified angle of the center sample to be included in the blurred result. We also added a filter that averages the occlusion distances in a 10x10 pixel area for completely unoccluded pixels to reduce noise for these pixels. Like our main filter, this filter also consists of two passes and is based on separable convolution. Besides this, we changed the grayscale debug visualization to a heatmap.
+
+Below is a sequence of images showing soft shadows for one of the new models we added and how the shadows compare to the ground truth. The first image shows the unfiltered version of the soft shadows. The second image shows the filtered result. In the third image, you can see the ground truth, and in the fourth image you can see the enhanced difference between the filtered result and the ground truth. The differences are small, but noticeable.
+
 <p align="center">
   <img src="optixSoftShadows/screenshots/flower_diffuse.png">
 </p>
@@ -100,8 +104,6 @@ As of this time, we had quite decent results, and we held a presentation of our 
 <p align="center">
   <img src="optixSoftShadows/screenshots/flower_difference.png">
 </p>
-
-In addition to this, we added some new models to better test self-shadowing and complex shadows. We extended our filter's object ID check to also compare normals; each sample is required to be within a specified angle of the center sample to be included in the blurred result. We also added a filter that averages the occlusion distances in a 10x10 pixel area for completely unoccluded pixels to reduce noise for these pixels. Like our main filter, this filter also consists of two passes and is based on separable convolution. Besides this, we changed the grayscale debug visualization to a heatmap.
 
 ## Conclusions & Improvements
 
