@@ -1,17 +1,44 @@
-# Project in sampling and reconstruction of visual appearance
-# Axis-Aligned Filtering for Interactive Sampled Soft Shadows
-# http://graphics.berkeley.edu/papers/UdayMehta-AAF-2012-12/
+# Implementation of Axis-Aligned Filtering for Interactive Sampled Soft Shadows
 ## by Asbjoern Lystrup and Marcus Loo Vergara
 
-This project shows our implementation soft shadows based on the paper [*Axis-Aligned Filtering for Interactive Sampled Soft Shadows*](http://graphics.berkeley.edu/papers/UdayMehta-AAF-2012-12/) by Soham Uday Mehta, Brandon Wang, and Ravi Ramamoorthi. The soft shadows are based on Monte Carlo sampling, and is hence physically accurate. It uses planar area light sources. The method starts off by casting a number of rays per pixel to obtain values defining the occlusion. These values are then used to find filter widths for blurring the noise, and an additional sample count to further enhance accuracy in the most complex areas of the shadows. Then the filtering is applied. The filtering is axis-aligned and done in image-space, providing great performance and making interaction possible.
+## Background
 
-We started out by downloading and learning NVIDIA's OptiX, which is a real-time raytracing framework used by the paper. We looked at a couple of tutorials to understand the interaction between rays and geometry, and started to work on our implementation. 
+This project details our implementation soft shadows based on the paper [*Axis-Aligned Filtering for Interactive Sampled Soft Shadows*](http://graphics.berkeley.edu/papers/UdayMehta-AAF-2012-12/) by Soham Uday Mehta, Brandon Wang, and Ravi Ramamoorthi. The paper  describes a way of approximating Monte Carlo based soft shadows, by analysing the Fourier spectrum of the occlusion function, and thereby doing smart sampling and reconstruction of the shadows. Here's a quick summary of the method:
+
+<p align="center">
+  <img src="figures/Occlusion_Spectrum_Figure.png">
+</p>
+
+Given a planar area light source, we sample the distances from the geometry to the light source, and the max and min distance from the occluder to the light source, shown in the figure above as d1, d2 respectively. This gives us the 2 dimensinal occlusion function *(b)*, on which we can calculate the Fourier spectrum *(c)*. Figure *(c)* shows that the occlusion function (shadows) can confined within a double-wedge which is be described in terms of _d1_ and _d2_. By only considering samples within this double-wedge, we can substantially reduce the amount of samples we need for a good reconstruction by blurring more at high-frequency regions than in low-frequency regions  - this is the main idea of the paper.
 
 The paper's method derives from recent work on frequency analysis and sheared filtering for offline soft shadows. The paper develops a theoretical analysis for axis-aligned filtering. After setting up the foundation of the implementation, we spent some time studying fourier spectrums to get a better idea of the paper's theory.
 
+## Implementation
+
+The implementation can be found [here](https://github.com/bitsauce/Axis-Aligned-Filtering-for-Interactive-Sampled-Soft-Shadows-Implementation). Our implementation uses NVIDIA's [OptiX](https://developer.nvidia.com/optix) to do real-time raytracing.
+
+
+In our implementation we start off by casting one ray per pixel to find the primary geometry hit. From this hit location, we now cast 9 rays per pixel towards 9 random points the area light source. This gives us our values for _d2_max_ and _d2_min_.
+
+<p align="center">
+  <img src="figures/d1_d2_figure.png">
+</p>
+
+<p align="center">
+  <img src="optixSoftShadows/screenshots/boxes_diffuse.png">
+</p>
+
+While sampling the distances, we also sample the intensity of the color, giving us the noisy output we will blur later, as seen above.
+
+These values are used to find filter widths for blurring the noise, and an additional sample count to further enhance accuracy in the most complex areas of the shadows. Then the filtering is applied. The filtering is axis-aligned and done in image-space, providing great performance and making interaction possible.
+
+
+
+
+
 We continued working on our implementation and added occlusion calculation and debugging functionality. For the occlusion calculation, nine rays per pixel are sent toward random points on the light source to obtain distances between the light source and the closest and furthest occluder. We approximate the distance between the light source and the pixels by using the center of the light source. In the same pass, we calculate the filter widths using the equations from the paper and store them in a float buffer. The debugging functionality we implemented let us use the arrow keys to move back and forth to look at different buffers, visualized by normalizing the buffer to make the greatest value correspond to white, and the lowest to black. It also let us see the minimum, average, and maximum value in text form, as well as the framerate.
 
-We then implemented the axis-aligned filtering. We separate the filtering into two passes based on separable convolution; a pass that blurs the shadows horizontally, followed by a pass that blurs the first pass' result vertically. The computed filter widths correspond to standard deviations in a gaussian distribution used for the blurring. To avoid sampling from other objects, we created an object ID buffer where each object's pixels gets its own unique value.
+We then implemented the axis-aligned filtering. We separate the filtering into two passes based on separable convolution; a pass that blurs the shadows horizontally, followed by a pass that blurs the first pass' result vertically. The computed filter widths correspond to standard deviations in a spatially varying gaussian blur. To avoid sampling from other objects, we created an object ID buffer where each object's pixels gets its own unique value.
 
 We went back to the pass for the filter width calculation, and implemented adaptive sampling. The adaptive sampling is used to improve both the diffuse accuracy and the filter widths, and is based on the equations from the paper, which uses the occlusion distances. We use an upper limit of 100 samples per pixel. To compare our results with ground truth, we extended our debugging tools to generate three images upon a button press; a filtered result image, a ground truth image, and a disparity map.
 
